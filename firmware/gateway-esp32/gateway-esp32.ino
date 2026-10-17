@@ -1,12 +1,14 @@
 // =====================================================================
 //  LoRaSense Gateway (ESP32)
-//  Phase 1: Wi-Fi AP + LittleFS web server + LoRa commands
+//  Phase 2: config persistence + dynamic equipment registry
 //
-//  What changed from Phase 4:
-//   - Dashboard moved from PROGMEM to LittleFS (separate HTML/CSS/JS)
-//   - Web files served from flash filesystem, easy to edit
-//   - Prepared for config storage in /config/ directory
-//   - dashboard.h is no longer used
+//  What changed from Phase 1:
+//   - Equipment loaded from /config/equipment.json (user-editable)
+//   - Environment and zone config persisted in LittleFS
+//   - New API: /api/config, /api/config/environment, /api/config/zones,
+//     /api/config/equipment (CRUD)
+//   - Output state tracked per relay channel, not per device name
+//   - ArduinoJson for config serialization
 // =====================================================================
 
 #include <WiFi.h>
@@ -14,11 +16,14 @@
 #include <SPI.h>
 #include <LoRa.h>
 #include <LittleFS.h>
+#include <ArduinoJson.h>
 #include "secrets.h"
 #include "device.h"
+#include "config.h"
 #include "../common/protocol.h"
 
 WebServer server(80);
+ConfigManager config;
 
 // --- LoRa pins ---
 const int PIN_SCK  = 18;
@@ -38,24 +43,8 @@ const uint32_t ACK_TIMEOUT_MS  = 1500;
 const uint8_t  MAX_RETRIES     = 3;
 const uint32_t RETRY_DELAY_MS  = 200;
 
-// --- Devices (matches the 4-channel relay on the Mega) ---
-Device devices[] = {
-  { "light1", "Living room light", false, false, CMD_IDLE, 0 },
-  { "light2", "Bedroom light",     false, false, CMD_IDLE, 0 },
-  { "fan1",   "Ceiling fan",       false, false, CMD_IDLE, 0 },
-  { "pump1",  "Water pump",        false, false, CMD_IDLE, 0 },
-};
-const int DEVICE_COUNT = sizeof(devices) / sizeof(devices[0]);
-
-Device *findDevice(const String &id) {
-  for (int i = 0; i < DEVICE_COUNT; i++)
-    if (id == devices[i].id) return &devices[i];
-  return nullptr;
-}
-
-int deviceIndex(Device *d) {
-  return (int)(d - devices);
-}
+// --- Output state (per relay channel, not per equipment name) ---
+OutputState outputs[MAX_OUTPUTS];
 
 // --- Sequence number ---
 uint8_t nextSeq = 0;
@@ -89,12 +78,9 @@ String getContentType(const String &path) {
 bool serveFile(const String &path) {
   String filePath = path;
   if (filePath.endsWith("/")) filePath += "index.html";
-
   if (!LittleFS.exists(filePath)) return false;
-
   File f = LittleFS.open(filePath, "r");
   if (!f) return false;
-
   server.streamFile(f, getContentType(filePath));
   f.close();
   return true;
@@ -103,9 +89,9 @@ bool serveFile(const String &path) {
 // =====================================================================
 //  LoRa send + wait for ACK
 // =====================================================================
-bool sendAndWaitAck(uint8_t deviceIdx, bool requestedOn, uint8_t seq) {
+bool sendAndWaitAck(uint8_t outputIdx, bool requestedOn, uint8_t seq) {
   CmdSetPayload cmd;
-  cmd.deviceIndex = deviceIdx;
+  cmd.deviceIndex = outputIdx;
   cmd.requestedOn = requestedOn ? 1 : 0;
 
   uint8_t buf[FRAME_MAX];
@@ -119,7 +105,7 @@ bool sendAndWaitAck(uint8_t deviceIdx, bool requestedOn, uint8_t seq) {
     LoRa.write(buf, len);
     LoRa.endPacket();
     Serial.print("[LoRa] TX cmd seq="); Serial.print(seq);
-    Serial.print(" dev="); Serial.print(deviceIdx);
+    Serial.print(" output="); Serial.print(outputIdx);
     Serial.print(" on="); Serial.print(requestedOn);
     Serial.print(" attempt="); Serial.println(attempt + 1);
 
@@ -131,38 +117,25 @@ bool sendAndWaitAck(uint8_t deviceIdx, bool requestedOn, uint8_t seq) {
 
       uint8_t rxBuf[FRAME_MAX];
       for (int i = 0; i < n; i++) rxBuf[i] = LoRa.read();
-
-      if (!validateFrame(rxBuf, n)) {
-        Serial.println("[LoRa] RX bad CRC, dropped");
-        continue;
-      }
+      if (!validateFrame(rxBuf, n)) { Serial.println("[LoRa] RX bad CRC"); continue; }
 
       FrameHeader *hdr = (FrameHeader *)rxBuf;
-      if (hdr->dst != ADDR_GATEWAY) continue;
-      if (hdr->src != ADDR_NODE1)   continue;
+      if (hdr->dst != ADDR_GATEWAY || hdr->src != ADDR_NODE1) continue;
 
       if (hdr->type == MSG_ACK && hdr->seq == seq) {
         AckPayload *ack = (AckPayload *)(rxBuf + HEADER_SIZE);
-        Serial.print("[LoRa] ACK dev="); Serial.print(ack->deviceIndex);
-        Serial.print(" actual="); Serial.print(ack->actualOn);
-        Serial.print(" ok="); Serial.println(ack->ok);
-
         nodeOnline = true;
         lastNodeHeard = millis();
 
-        if (ack->deviceIndex < DEVICE_COUNT) {
-          devices[ack->deviceIndex].confirmedOn = (ack->actualOn == 1);
-          devices[ack->deviceIndex].status = CMD_CONFIRMED;
+        if (ack->deviceIndex < MAX_OUTPUTS) {
+          outputs[ack->deviceIndex].confirmedOn = (ack->actualOn == 1);
+          outputs[ack->deviceIndex].status = CMD_CONFIRMED;
         }
         return true;
       }
 
-      if (hdr->type == MSG_TELEMETRY) {
-        handleTelemetry(rxBuf, n);
-      } else if (hdr->type == MSG_HEARTBEAT) {
-        nodeOnline = true;
-        lastNodeHeard = millis();
-      }
+      if (hdr->type == MSG_TELEMETRY) handleTelemetry(rxBuf, n);
+      else if (hdr->type == MSG_HEARTBEAT) { nodeOnline = true; lastNodeHeard = millis(); }
     }
     Serial.println("[LoRa] timeout, retrying...");
   }
@@ -177,8 +150,8 @@ void handleTelemetry(const uint8_t *buf, uint8_t len) {
   TelemetryPayload *t = (TelemetryPayload *)(buf + HEADER_SIZE);
   nodeTemperature = t->temperatureX10 / 10.0;
 
-  for (int i = 0; i < DEVICE_COUNT && i < 8; i++) {
-    devices[i].confirmedOn = (t->relayStates >> i) & 1;
+  for (int i = 0; i < MAX_OUTPUTS && i < 8; i++) {
+    outputs[i].confirmedOn = (t->relayStates >> i) & 1;
   }
 
   nodeOnline = true;
@@ -201,11 +174,9 @@ void checkIncoming() {
   FrameHeader *hdr = (FrameHeader *)buf;
   if (hdr->dst != ADDR_GATEWAY && hdr->dst != ADDR_BROADCAST) return;
 
-  if (hdr->type == MSG_TELEMETRY) {
-    handleTelemetry(buf, n);
-  } else if (hdr->type == MSG_HEARTBEAT) {
-    nodeOnline = true;
-    lastNodeHeard = millis();
+  if (hdr->type == MSG_TELEMETRY) handleTelemetry(buf, n);
+  else if (hdr->type == MSG_HEARTBEAT) {
+    nodeOnline = true; lastNodeHeard = millis();
     Serial.println("[LoRa] Heartbeat received");
   }
 }
@@ -220,81 +191,283 @@ void sendKeepalive() {
   LoRa.beginPacket();
   LoRa.write(buf, len);
   LoRa.endPacket();
-  Serial.println("[LoRa] TX keepalive");
 }
 
 // =====================================================================
 //  Process pending commands
 // =====================================================================
 void processPendingCommands() {
-  for (int i = 0; i < DEVICE_COUNT; i++) {
-    Device &d = devices[i];
-    if (d.status != CMD_PENDING) continue;
-
-    bool ok = sendAndWaitAck(i, d.requestedOn, d.seq);
+  for (int i = 0; i < MAX_OUTPUTS; i++) {
+    if (outputs[i].status != CMD_PENDING) continue;
+    bool ok = sendAndWaitAck(i, outputs[i].requestedOn, outputs[i].seq);
     if (!ok) {
-      d.status = CMD_FAILED;
-      Serial.print("[LoRa] FAILED dev="); Serial.println(i);
+      outputs[i].status = CMD_FAILED;
+      Serial.print("[LoRa] FAILED output="); Serial.println(i);
     }
     return;
   }
 }
 
 // =====================================================================
-//  HTTP handlers
+//  HTTP: /api/state — dashboard polling endpoint
 // =====================================================================
 void handleState() {
-  if (nodeOnline && millis() - lastNodeHeard > NODE_TIMEOUT_MS) {
+  if (nodeOnline && millis() - lastNodeHeard > NODE_TIMEOUT_MS)
     nodeOnline = false;
+
+  JsonDocument doc;
+  doc["uptime_s"]     = millis() / 1000;
+  doc["clients"]      = WiFi.softAPgetStationNum();
+  doc["node_online"]  = nodeOnline;
+  doc["temperature_c"] = serialized(String(nodeTemperature, 1));
+  doc["rssi"]         = LoRa.packetRssi();
+
+  // Build devices array from equipment registry + output states
+  JsonArray devArr = doc["devices"].to<JsonArray>();
+  for (int i = 0; i < config.equipmentCount; i++) {
+    Equipment &eq = config.equipment[i];
+    if (!eq.active) continue;
+    JsonObject d = devArr.add<JsonObject>();
+    d["id"]       = eq.id;
+    d["name"]     = eq.name;
+    d["category"] = eq.category;
+    d["zone_id"]  = eq.zoneId;
+
+    if (eq.outputIndex < MAX_OUTPUTS) {
+      d["on"]     = outputs[eq.outputIndex].confirmedOn;
+      d["status"] = statusName(outputs[eq.outputIndex].status);
+      d["output"] = eq.outputIndex;
+    } else {
+      d["on"]     = false;
+      d["status"] = "IDLE";
+      d["output"] = nullptr;
+    }
   }
 
-  String json = "{";
-  json += "\"uptime_s\":" + String(millis() / 1000) + ",";
-  json += "\"clients\":" + String(WiFi.softAPgetStationNum()) + ",";
-  json += "\"node_online\":" + String(nodeOnline ? "true" : "false") + ",";
-  json += "\"temperature_c\":" + String(nodeTemperature, 1) + ",";
-  json += "\"rssi\":" + String(LoRa.packetRssi()) + ",";
-  json += "\"devices\":[";
-  for (int i = 0; i < DEVICE_COUNT; i++) {
-    Device &d = devices[i];
-    if (i) json += ",";
-    json += "{\"id\":\"" + String(d.id) + "\",";
-    json += "\"name\":\"" + String(d.name) + "\",";
-    json += "\"on\":" + String(d.confirmedOn ? "true" : "false") + ",";
-    json += "\"status\":\"" + String(statusName(d.status)) + "\"}";
+  // Environment info
+  if (config.env.configured) {
+    doc["env_name"] = config.env.name;
+    doc["env_type"] = config.env.type;
   }
-  json += "]}";
+
+  String json;
+  serializeJson(doc, json);
   server.send(200, "application/json", json);
 }
 
+// =====================================================================
+//  HTTP: POST /api/devices — control a device by equipment ID
+// =====================================================================
 void handleSetDevice() {
   if (!server.hasArg("id") || !server.hasArg("state")) {
     server.send(400, "application/json", "{\"error\":\"need id and state\"}");
     return;
   }
-  Device *d = findDevice(server.arg("id"));
-  if (!d) {
-    server.send(404, "application/json", "{\"error\":\"unknown device\"}");
+
+  Equipment *eq = config.findEquipment(server.arg("id").c_str());
+  if (!eq) {
+    server.send(404, "application/json", "{\"error\":\"unknown equipment\"}");
     return;
   }
+  if (eq->outputIndex >= MAX_OUTPUTS) {
+    server.send(400, "application/json", "{\"error\":\"no relay assigned\"}");
+    return;
+  }
+
   String state = server.arg("state");
   if (state != "on" && state != "off") {
     server.send(400, "application/json", "{\"error\":\"state must be on or off\"}");
     return;
   }
-  if (d->status == CMD_PENDING) {
-    server.send(409, "application/json", "{\"error\":\"command already pending\"}");
+  if (outputs[eq->outputIndex].status == CMD_PENDING) {
+    server.send(409, "application/json", "{\"error\":\"command pending\"}");
     return;
   }
 
-  d->requestedOn = (state == "on");
-  d->status      = CMD_PENDING;
-  d->sentAt      = millis();
-  d->seq         = nextSeq++;
+  outputs[eq->outputIndex].requestedOn = (state == "on");
+  outputs[eq->outputIndex].status      = CMD_PENDING;
+  outputs[eq->outputIndex].sentAt      = millis();
+  outputs[eq->outputIndex].seq         = nextSeq++;
 
   server.send(202, "application/json", "{\"status\":\"PENDING\"}");
 }
 
+// =====================================================================
+//  HTTP: Config API
+// =====================================================================
+void handleGetConfig() {
+  JsonDocument doc;
+  JsonObject env = doc["environment"].to<JsonObject>();
+  env["name"] = config.env.name;
+  env["type"] = config.env.type;
+  env["configured"] = config.env.configured;
+
+  JsonArray zArr = doc["zones"].to<JsonArray>();
+  for (int i = 0; i < config.zoneCount; i++) {
+    JsonObject z = zArr.add<JsonObject>();
+    z["id"]   = config.zones[i].id;
+    z["name"] = config.zones[i].name;
+  }
+
+  JsonArray eArr = doc["equipment"].to<JsonArray>();
+  for (int i = 0; i < config.equipmentCount; i++) {
+    if (!config.equipment[i].active) continue;
+    Equipment &eq = config.equipment[i];
+    JsonObject e = eArr.add<JsonObject>();
+    e["id"]       = eq.id;
+    e["name"]     = eq.name;
+    e["category"] = eq.category;
+    e["zone_id"]  = eq.zoneId;
+    if (eq.outputIndex != 0xFF) e["output"] = eq.outputIndex;
+  }
+
+  // Available relay outputs
+  JsonArray outArr = doc["available_outputs"].to<JsonArray>();
+  for (int i = 0; i < MAX_OUTPUTS; i++) {
+    if (!config.isOutputTaken(i)) outArr.add(i);
+  }
+
+  doc["max_outputs"] = MAX_OUTPUTS;
+
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+void handleSetEnvironment() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) {
+    server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+    return;
+  }
+  strlcpy(config.env.name, doc["name"] | config.env.name, NAME_LEN);
+  strlcpy(config.env.type, doc["type"] | config.env.type, sizeof(config.env.type));
+  config.saveEnvironment();
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+void handleAddZone() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) {
+    server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+    return;
+  }
+  const char *id   = doc["id"] | "";
+  const char *name = doc["name"] | "";
+  if (!id[0] || !name[0]) {
+    server.send(400, "application/json", "{\"error\":\"need id and name\"}");
+    return;
+  }
+  if (!config.addZone(id, name)) {
+    server.send(409, "application/json", "{\"error\":\"zone exists or limit reached\"}");
+    return;
+  }
+  server.send(201, "application/json", "{\"ok\":true}");
+}
+
+void handleDeleteZone() {
+  String id = server.arg("id");
+  if (!id.length()) {
+    server.send(400, "application/json", "{\"error\":\"need id\"}");
+    return;
+  }
+  if (!config.removeZone(id.c_str())) {
+    server.send(404, "application/json", "{\"error\":\"zone not found\"}");
+    return;
+  }
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+void handleAddEquipment() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) {
+    server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+    return;
+  }
+  const char *id   = doc["id"] | "";
+  const char *name = doc["name"] | "";
+  const char *cat  = doc["category"] | "other";
+  const char *zone = doc["zone_id"] | "";
+  uint8_t output   = doc["output"] | 0xFF;
+
+  if (!id[0] || !name[0]) {
+    server.send(400, "application/json", "{\"error\":\"need id and name\"}");
+    return;
+  }
+  if (output != 0xFF && output >= MAX_OUTPUTS) {
+    server.send(400, "application/json", "{\"error\":\"invalid output index\"}");
+    return;
+  }
+  if (output != 0xFF && config.isOutputTaken(output)) {
+    server.send(409, "application/json", "{\"error\":\"output already assigned\"}");
+    return;
+  }
+  if (!config.addEquipment(id, name, cat, zone, output)) {
+    server.send(409, "application/json", "{\"error\":\"equipment exists or limit reached\"}");
+    return;
+  }
+  server.send(201, "application/json", "{\"ok\":true}");
+}
+
+void handleUpdateEquipment() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) {
+    server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+    return;
+  }
+  const char *id   = doc["id"] | "";
+  const char *name = doc["name"] | "";
+  const char *cat  = doc["category"] | "";
+  const char *zone = doc["zone_id"] | "";
+  uint8_t output   = doc["output"] | 0xFF;
+
+  if (!id[0]) {
+    server.send(400, "application/json", "{\"error\":\"need id\"}");
+    return;
+  }
+  if (output != 0xFF && output >= MAX_OUTPUTS) {
+    server.send(400, "application/json", "{\"error\":\"invalid output index\"}");
+    return;
+  }
+  if (!config.updateEquipment(id, name, cat, zone, output)) {
+    server.send(404, "application/json", "{\"error\":\"not found or output taken\"}");
+    return;
+  }
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+void handleDeleteEquipment() {
+  String id = server.arg("id");
+  if (!id.length()) {
+    server.send(400, "application/json", "{\"error\":\"need id\"}");
+    return;
+  }
+  if (!config.removeEquipment(id.c_str())) {
+    server.send(404, "application/json", "{\"error\":\"not found\"}");
+    return;
+  }
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// =====================================================================
+//  Catch-all: serve from LittleFS or 404
+// =====================================================================
 void handleNotFound() {
   if (serveFile(server.uri())) return;
   server.send(404, "text/plain", "Not found");
@@ -307,12 +480,32 @@ void setup() {
   Serial.println();
   Serial.println("=== LoRaSense gateway ===");
 
+  // Init output states
+  for (int i = 0; i < MAX_OUTPUTS; i++) {
+    outputs[i].confirmedOn = false;
+    outputs[i].requestedOn = false;
+    outputs[i].status = CMD_IDLE;
+    outputs[i].sentAt = 0;
+    outputs[i].seq = 0;
+  }
+
   // LittleFS
   if (!LittleFS.begin(true)) {
     Serial.println("FAIL: LittleFS mount failed.");
   } else {
     Serial.println("LittleFS mounted.");
   }
+
+  // Load config from flash
+  config.begin();
+  if (!config.env.configured) {
+    Serial.println("First boot: creating default config...");
+    config.createDefaults();
+  }
+  Serial.print("Environment: "); Serial.print(config.env.name);
+  Serial.print(" ("); Serial.print(config.env.type); Serial.println(")");
+  Serial.print("Equipment: "); Serial.println(config.equipmentCount);
+  Serial.print("Zones: "); Serial.println(config.zoneCount);
 
   // Wi-Fi access point
   WiFi.mode(WIFI_AP);
@@ -333,9 +526,19 @@ void setup() {
   LoRa.enableCrc();
   Serial.println("LoRa radio started at 433 MHz.");
 
-  // Web server: API routes first, then LittleFS fallback
+  // Web server routes
   server.on("/api/state",   HTTP_GET,  handleState);
   server.on("/api/devices", HTTP_POST, handleSetDevice);
+
+  // Config API
+  server.on("/api/config",              HTTP_GET,    handleGetConfig);
+  server.on("/api/config/environment",  HTTP_POST,   handleSetEnvironment);
+  server.on("/api/config/zones",        HTTP_POST,   handleAddZone);
+  server.on("/api/config/zones",        HTTP_DELETE, handleDeleteZone);
+  server.on("/api/config/equipment",    HTTP_POST,   handleAddEquipment);
+  server.on("/api/config/equipment",    HTTP_PUT,    handleUpdateEquipment);
+  server.on("/api/config/equipment",    HTTP_DELETE, handleDeleteEquipment);
+
   server.onNotFound(handleNotFound);
   server.begin();
   lastKeepalive = millis();

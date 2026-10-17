@@ -2,11 +2,13 @@
   --bg: #f4f5f7; --card: #ffffff; --text: #1c1f24; --muted: #6b7280;
   --on: #16a34a; --off: #9ca3af; --pending: #d97706; --fail: #dc2626;
   --border: #e5e7eb; --accent: #2563eb; --accent-soft: #eff4ff;
+  --input-bg: #ffffff;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #111418; --card: #1b1f25; --text: #e8eaed; --muted: #9aa0a6;
     --border: #2a2f36; --accent: #6d9eff; --accent-soft: #1a2740;
+    --input-bg: #232830;
   }
 }
 
@@ -18,12 +20,16 @@ body {
 }
 
 header { padding: 20px 16px 8px; }
+.header-row { display: flex; justify-content: space-between; align-items: flex-start; }
 h1 { margin: 0; font-size: 22px; }
 h2 { font-size: 16px; color: var(--muted); margin: 20px 0 10px; font-weight: 600; }
+h3 { font-size: 15px; margin: 16px 0 8px; font-weight: 600; }
+h4 { font-size: 14px; margin: 12px 0 8px; font-weight: 600; color: var(--accent); }
 .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
 
 main { padding: 8px 16px 32px; max-width: 640px; margin: 0 auto; }
 
+/* Stats */
 .stats {
   display: grid; grid-template-columns: repeat(3, 1fr);
   gap: 10px; margin-bottom: 16px;
@@ -37,6 +43,7 @@ main { padding: 8px 16px 32px; max-width: 640px; margin: 0 auto; }
 .stat .value.online { color: var(--on); }
 .stat .value.offline { color: var(--fail); }
 
+/* Device cards */
 .device {
   display: flex; align-items: center; justify-content: space-between;
   background: var(--card); border: 1px solid var(--border);
@@ -44,20 +51,42 @@ main { padding: 8px 16px 32px; max-width: 640px; margin: 0 auto; }
 }
 .device .info .name { font-weight: 600; }
 .device .info .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
-.device .state { font-size: 13px; margin-top: 3px; }
 .state-on { color: var(--on); }
 .state-off { color: var(--off); }
 .state-pending { color: var(--pending); }
 .state-failed { color: var(--fail); }
 
 button {
-  min-width: 84px; padding: 10px 14px; border-radius: 10px; border: 0;
+  padding: 10px 14px; border-radius: 10px; border: 0;
   font-size: 15px; font-weight: 600; cursor: pointer; color: #fff;
   background: var(--on);
 }
 button.turn-off { background: #4b5563; }
 button:disabled { opacity: 0.5; cursor: wait; }
 
+.icon-btn {
+  background: var(--card); color: var(--text); border: 1px solid var(--border);
+  width: 40px; height: 40px; border-radius: 10px; font-size: 20px;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+  cursor: pointer;
+}
+
+.text-btn {
+  background: none; color: var(--accent); border: 0; padding: 4px 0;
+  font-size: 14px; cursor: pointer; font-weight: 500;
+}
+
+.btn-small {
+  padding: 8px 16px; font-size: 13px; border-radius: 8px;
+  background: var(--accent); color: #fff; border: 0; cursor: pointer;
+  font-weight: 600;
+}
+.btn-danger {
+  background: var(--fail); color: #fff; padding: 4px 10px;
+  border: 0; border-radius: 6px; font-size: 12px; cursor: pointer;
+}
+
+/* Banner */
 .banner {
   display: none; background: var(--fail); color: #fff;
   padding: 10px 16px; border-radius: 10px; margin-bottom: 12px;
@@ -67,4 +96,43 @@ button:disabled { opacity: 0.5; cursor: wait; }
 .empty-state {
   text-align: center; color: var(--muted); padding: 32px 16px;
   font-size: 14px;
+}
+
+/* Settings */
+.settings-header {
+  display: flex; justify-content: space-between; align-items: center;
+}
+.settings-section {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 16px; margin-bottom: 12px;
+}
+
+.form-row {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+.form-row label {
+  font-size: 13px; color: var(--muted); min-width: 80px;
+}
+.form-row input, .form-row select {
+  flex: 1; padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: 8px; font-size: 14px; background: var(--input-bg);
+  color: var(--text);
+}
+
+.add-equipment-form {
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);
+}
+
+.eq-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 0; border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+.eq-item:last-child { border-bottom: 0; }
+.eq-item .eq-name { font-weight: 500; }
+.eq-item .eq-meta { font-size: 12px; color: var(--muted); }
+
+.zone-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 0; font-size: 14px;
 }
