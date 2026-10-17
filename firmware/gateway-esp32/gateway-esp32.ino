@@ -1,30 +1,26 @@
 // =====================================================================
-//  LoRa Local-First Control Platform - GATEWAY (ESP32)
-//  Phase 4: Wi-Fi AP + dashboard + real LoRa commands to the Mega
+//  LoRaSense Gateway (ESP32)
+//  Phase 1: Wi-Fi AP + LittleFS web server + LoRa commands
 //
-//  What this sketch does:
-//   1. Creates the "HomeControl" Wi-Fi network (access point).
-//   2. Serves the dashboard at http://192.168.4.1
-//   3. When you tap a button on the site, it queues a LoRa command.
-//   4. The LoRa task sends the command and waits for the Mega's ACK.
-//   5. If no ACK arrives, it retries up to 3 times, then marks FAILED.
-//   6. The site polls /api/state and shows the confirmed result.
-//
-//  The simulated node is gone. This talks to the real Mega.
+//  What changed from Phase 4:
+//   - Dashboard moved from PROGMEM to LittleFS (separate HTML/CSS/JS)
+//   - Web files served from flash filesystem, easy to edit
+//   - Prepared for config storage in /config/ directory
+//   - dashboard.h is no longer used
 // =====================================================================
 
 #include <WiFi.h>
 #include <WebServer.h>
 #include <SPI.h>
 #include <LoRa.h>
+#include <LittleFS.h>
 #include "secrets.h"
-#include "dashboard.h"
 #include "device.h"
 #include "../common/protocol.h"
 
 WebServer server(80);
 
-// --- LoRa pins (same as the test sketch) ---
+// --- LoRa pins ---
 const int PIN_SCK  = 18;
 const int PIN_MISO = 19;
 const int PIN_MOSI = 23;
@@ -38,9 +34,9 @@ const long BANDWIDTH = 125E3;
 const int  TX_POWER  = 10;
 
 // --- Command queue and retry settings ---
-const uint32_t ACK_TIMEOUT_MS  = 1500;   // wait this long for a reply
-const uint8_t  MAX_RETRIES     = 3;      // try this many times total
-const uint32_t RETRY_DELAY_MS  = 200;    // pause between retries
+const uint32_t ACK_TIMEOUT_MS  = 1500;
+const uint8_t  MAX_RETRIES     = 3;
+const uint32_t RETRY_DELAY_MS  = 200;
 
 // --- Devices (matches the 4-channel relay on the Mega) ---
 Device devices[] = {
@@ -61,26 +57,53 @@ int deviceIndex(Device *d) {
   return (int)(d - devices);
 }
 
-// --- Sequence number (wraps 0-255) ---
+// --- Sequence number ---
 uint8_t nextSeq = 0;
 
 // --- Node status ---
 bool nodeOnline = false;
 uint32_t lastNodeHeard = 0;
-const uint32_t NODE_TIMEOUT_MS = 45000;  // mark offline after 45 s silence (3x telemetry interval)
+const uint32_t NODE_TIMEOUT_MS = 45000;
 
-// --- Keepalive: tell the node the gateway is still here ---
-const uint32_t KEEPALIVE_INTERVAL_MS = 20000;  // every 20 seconds
+// --- Keepalive ---
+const uint32_t KEEPALIVE_INTERVAL_MS = 20000;
 uint32_t lastKeepalive = 0;
 
 // --- Telemetry from node ---
 float nodeTemperature = 0;
 
 // =====================================================================
+//  LittleFS file server
+// =====================================================================
+String getContentType(const String &path) {
+  if (path.endsWith(".html")) return "text/html";
+  if (path.endsWith(".css"))  return "text/css";
+  if (path.endsWith(".js"))   return "application/javascript";
+  if (path.endsWith(".json")) return "application/json";
+  if (path.endsWith(".ico"))  return "image/x-icon";
+  if (path.endsWith(".svg"))  return "image/svg+xml";
+  if (path.endsWith(".png"))  return "image/png";
+  return "text/plain";
+}
+
+bool serveFile(const String &path) {
+  String filePath = path;
+  if (filePath.endsWith("/")) filePath += "index.html";
+
+  if (!LittleFS.exists(filePath)) return false;
+
+  File f = LittleFS.open(filePath, "r");
+  if (!f) return false;
+
+  server.streamFile(f, getContentType(filePath));
+  f.close();
+  return true;
+}
+
+// =====================================================================
 //  LoRa send + wait for ACK
 // =====================================================================
 bool sendAndWaitAck(uint8_t deviceIdx, bool requestedOn, uint8_t seq) {
-  // Build the command frame
   CmdSetPayload cmd;
   cmd.deviceIndex = deviceIdx;
   cmd.requestedOn = requestedOn ? 1 : 0;
@@ -92,7 +115,6 @@ bool sendAndWaitAck(uint8_t deviceIdx, bool requestedOn, uint8_t seq) {
   for (uint8_t attempt = 0; attempt < MAX_RETRIES; attempt++) {
     if (attempt > 0) delay(RETRY_DELAY_MS);
 
-    // Send
     LoRa.beginPacket();
     LoRa.write(buf, len);
     LoRa.endPacket();
@@ -101,7 +123,6 @@ bool sendAndWaitAck(uint8_t deviceIdx, bool requestedOn, uint8_t seq) {
     Serial.print(" on="); Serial.print(requestedOn);
     Serial.print(" attempt="); Serial.println(attempt + 1);
 
-    // Wait for matching ACK
     uint32_t start = millis();
     while (millis() - start < ACK_TIMEOUT_MS) {
       int n = LoRa.parsePacket();
@@ -117,8 +138,8 @@ bool sendAndWaitAck(uint8_t deviceIdx, bool requestedOn, uint8_t seq) {
       }
 
       FrameHeader *hdr = (FrameHeader *)rxBuf;
-      if (hdr->dst != ADDR_GATEWAY) continue;   // not for us
-      if (hdr->src != ADDR_NODE1)   continue;    // not from our node
+      if (hdr->dst != ADDR_GATEWAY) continue;
+      if (hdr->src != ADDR_NODE1)   continue;
 
       if (hdr->type == MSG_ACK && hdr->seq == seq) {
         AckPayload *ack = (AckPayload *)(rxBuf + HEADER_SIZE);
@@ -136,7 +157,6 @@ bool sendAndWaitAck(uint8_t deviceIdx, bool requestedOn, uint8_t seq) {
         return true;
       }
 
-      // Handle telemetry or heartbeat that arrives while we wait
       if (hdr->type == MSG_TELEMETRY) {
         handleTelemetry(rxBuf, n);
       } else if (hdr->type == MSG_HEARTBEAT) {
@@ -146,7 +166,7 @@ bool sendAndWaitAck(uint8_t deviceIdx, bool requestedOn, uint8_t seq) {
     }
     Serial.println("[LoRa] timeout, retrying...");
   }
-  return false;  // all retries failed
+  return false;
 }
 
 // =====================================================================
@@ -157,7 +177,6 @@ void handleTelemetry(const uint8_t *buf, uint8_t len) {
   TelemetryPayload *t = (TelemetryPayload *)(buf + HEADER_SIZE);
   nodeTemperature = t->temperatureX10 / 10.0;
 
-  // Update relay states from the node's report
   for (int i = 0; i < DEVICE_COUNT && i < 8; i++) {
     devices[i].confirmedOn = (t->relayStates >> i) & 1;
   }
@@ -169,7 +188,7 @@ void handleTelemetry(const uint8_t *buf, uint8_t len) {
 }
 
 // =====================================================================
-//  Background: check for incoming LoRa messages (telemetry, heartbeat)
+//  Background: check for incoming LoRa messages
 // =====================================================================
 void checkIncoming() {
   int n = LoRa.parsePacket();
@@ -192,7 +211,7 @@ void checkIncoming() {
 }
 
 // =====================================================================
-//  Send keepalive to the node so it doesn't trigger its fail-safe
+//  Send keepalive
 // =====================================================================
 void sendKeepalive() {
   uint8_t buf[FRAME_MAX];
@@ -205,7 +224,7 @@ void sendKeepalive() {
 }
 
 // =====================================================================
-//  Process pending commands (called from loop)
+//  Process pending commands
 // =====================================================================
 void processPendingCommands() {
   for (int i = 0; i < DEVICE_COUNT; i++) {
@@ -217,19 +236,14 @@ void processPendingCommands() {
       d.status = CMD_FAILED;
       Serial.print("[LoRa] FAILED dev="); Serial.println(i);
     }
-    return;  // one command per loop pass, so the web server stays responsive
+    return;
   }
 }
 
 // =====================================================================
-//  HTTP handlers (same API as before)
+//  HTTP handlers
 // =====================================================================
-void handleRoot() {
-  server.send_P(200, "text/html", DASHBOARD_HTML);
-}
-
 void handleState() {
-  // Check if node has gone silent
   if (nodeOnline && millis() - lastNodeHeard > NODE_TIMEOUT_MS) {
     nodeOnline = false;
   }
@@ -282,6 +296,7 @@ void handleSetDevice() {
 }
 
 void handleNotFound() {
+  if (serveFile(server.uri())) return;
   server.send(404, "text/plain", "Not found");
 }
 
@@ -290,7 +305,14 @@ void setup() {
   Serial.begin(115200);
   delay(500);
   Serial.println();
-  Serial.println("=== LoRa gateway: AP + dashboard + real LoRa ===");
+  Serial.println("=== LoRaSense gateway ===");
+
+  // LittleFS
+  if (!LittleFS.begin(true)) {
+    Serial.println("FAIL: LittleFS mount failed.");
+  } else {
+    Serial.println("LittleFS mounted.");
+  }
 
   // Wi-Fi access point
   WiFi.mode(WIFI_AP);
@@ -311,8 +333,7 @@ void setup() {
   LoRa.enableCrc();
   Serial.println("LoRa radio started at 433 MHz.");
 
-  // Web server
-  server.on("/",            HTTP_GET,  handleRoot);
+  // Web server: API routes first, then LittleFS fallback
   server.on("/api/state",   HTTP_GET,  handleState);
   server.on("/api/devices", HTTP_POST, handleSetDevice);
   server.onNotFound(handleNotFound);
@@ -326,7 +347,6 @@ void loop() {
   processPendingCommands();
   checkIncoming();
 
-  // Send keepalive to the node every 20 seconds
   if (millis() - lastKeepalive >= KEEPALIVE_INTERVAL_MS) {
     sendKeepalive();
     lastKeepalive = millis();
