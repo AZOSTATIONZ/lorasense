@@ -298,3 +298,68 @@ button:disabled { opacity: 0.5; cursor: wait; }
 }
 .wiz-eq-item:last-child { border-bottom: 0; }
 .wiz-eq-meta { font-size: 12px; color: var(--muted); }
+
+/* Hardware Studio */
+.studio-filter-row {
+  display: flex; gap: 8px; margin-bottom: 12px;
+}
+.pin-search {
+  flex: 1; padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--bg); color: var(--fg);
+  font-size: 13px;
+}
+.studio-filter-row select {
+  padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--bg); color: var(--fg);
+  font-size: 13px;
+}
+.pin-table-wrap { overflow-x: auto; }
+.pin-table {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+}
+.pin-table th {
+  text-align: left; padding: 8px 10px; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--muted); border-bottom: 2px solid var(--border);
+}
+.pin-table td {
+  padding: 6px 10px; border-bottom: 1px solid var(--border);
+}
+.pin-table tr.pin-available td { }
+.pin-table tr.pin-reserved td { color: var(--muted); }
+.pin-table tr.pin-assigned td { }
+.pin-cap-tag {
+  display: inline-block; font-size: 11px; padding: 1px 5px;
+  border-radius: 4px; margin-right: 3px;
+  background: var(--accent-soft); color: var(--accent);
+}
+.pin-state-badge {
+  display: inline-block; font-size: 11px; padding: 2px 8px;
+  border-radius: 10px; font-weight: 500;
+}
+.pin-state-badge.avail { background: #d4edda; color: #155724; }
+.pin-state-badge.sys   { background: #f8d7da; color: #721c24; }
+.pin-state-badge.radio { background: #fff3cd; color: #856404; }
+.pin-state-badge.used  { background: #cce5ff; color: #004085; }
+.node-card {
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px; margin-bottom: 10px;
+}
+.node-card h4 { margin: 0 0 6px; font-size: 15px; }
+.node-meta {
+  font-size: 12px; color: var(--muted);
+  display: flex; gap: 12px; flex-wrap: wrap;
+}
+.node-meta span { white-space: nowrap; }
+.driver-card {
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px; margin-bottom: 8px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.driver-card .driver-info h4 { margin: 0; font-size: 14px; }
+.driver-card .driver-info p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+.driver-badge {
+  font-size: 11px; padding: 3px 10px; border-radius: 10px; font-weight: 500;
+}
+.driver-badge.ok { background: #d4edda; color: #155724; }
+.driver-badge.na { background: var(--bg-card); color: var(--muted); }

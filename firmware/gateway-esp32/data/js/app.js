@@ -16,11 +16,16 @@ function showView(view) {
   currentView = view;
   document.getElementById('view-dashboard').style.display = view === 'dashboard' ? '' : 'none';
   document.getElementById('view-settings').style.display = view === 'settings' ? '' : 'none';
+  document.getElementById('view-studio').style.display = view === 'studio' ? '' : 'none';
 
   if (view === 'settings') {
     clearInterval(pollTimer);
     clearInterval(historyTimer);
     loadConfig();
+  } else if (view === 'studio') {
+    clearInterval(pollTimer);
+    clearInterval(historyTimer);
+    loadStudio();
   } else {
     refresh();
     loadHistory();
@@ -851,3 +856,93 @@ fetch('/api/state')
     pollTimer = setInterval(refresh, 1000);
     historyTimer = setInterval(loadHistory, 30000);
   });
+
+// =====================================================================
+//  Hardware Studio
+// =====================================================================
+document.getElementById('open-studio-btn').onclick = function() { showView('studio'); };
+document.getElementById('studio-back-btn').onclick = function() { showView('settings'); };
+
+var PIN_STATES = ['Available', 'System', 'Radio', 'Assigned'];
+var PIN_CSS    = ['avail',     'sys',    'radio', 'used'];
+
+function loadStudio() {
+  loadNodes();
+  loadPins();
+  loadDrivers();
+}
+
+function loadNodes() {
+  fetch('/api/hw/nodes').then(function(r){return r.json();}).then(function(nodes){
+    var el = document.getElementById('node-list');
+    if (!nodes.length) { el.innerHTML = '<p style="color:var(--muted)">No controllers registered.</p>'; return; }
+    el.innerHTML = nodes.map(function(n){
+      return '<div class="node-card">' +
+        '<h4>' + esc(n.name) + '</h4>' +
+        '<div class="node-meta">' +
+          '<span>ID: ' + esc(n.id) + '</span>' +
+          '<span>Board: ' + esc(n.board) + '</span>' +
+          '<span>Addr: 0x' + ('0'+n.address.toString(16)).slice(-2).toUpperCase() + '</span>' +
+          '<span>FW: ' + esc(n.fw) + '</span>' +
+          '<span>Relays: ' + n.relays + '</span>' +
+          '<span>Sensors: ' + n.sensors + '</span>' +
+          '<span>Free pins: ' + n.free_pins + '</span>' +
+          '<span>' + (n.online ? '&#x1F7E2; Online' : '&#x1F534; Offline') + '</span>' +
+        '</div></div>';
+    }).join('');
+  });
+}
+
+function loadPins() {
+  fetch('/api/hw/pins').then(function(r){return r.json();}).then(function(pins){
+    var tbody = document.getElementById('pin-tbody');
+    tbody.innerHTML = '';
+    window._pinData = pins;
+    renderPinTable(pins);
+  });
+}
+
+function renderPinTable(pins) {
+  var search = (document.getElementById('pin-search').value || '').toLowerCase();
+  var filter = document.getElementById('pin-filter').value;
+  var tbody  = document.getElementById('pin-tbody');
+  var html   = '';
+  for (var i = 0; i < pins.length; i++) {
+    var p = pins[i];
+    if (search && p.name.toLowerCase().indexOf(search) < 0 && p.used.toLowerCase().indexOf(search) < 0) continue;
+    if (filter === 'available' && p.state !== 0) continue;
+    if (filter === 'assigned' && p.state !== 3) continue;
+    if (filter === 'reserved' && p.state !== 1 && p.state !== 2) continue;
+    var caps = p.caps.split(',');
+    var capHtml = caps.map(function(c){ return c ? '<span class="pin-cap-tag">' + c + '</span>' : ''; }).join('');
+    var stClass = PIN_CSS[p.state] || '';
+    var rowClass = p.state === 0 ? 'pin-available' : (p.state === 3 ? 'pin-assigned' : 'pin-reserved');
+    html += '<tr class="' + rowClass + '">' +
+      '<td><strong>' + esc(p.name) + '</strong></td>' +
+      '<td>' + capHtml + '</td>' +
+      '<td><span class="pin-state-badge ' + stClass + '">' + PIN_STATES[p.state] + '</span></td>' +
+      '<td>' + esc(p.used) + '</td></tr>';
+  }
+  tbody.innerHTML = html || '<tr><td colspan="4" style="text-align:center;color:var(--muted)">No matching pins</td></tr>';
+}
+
+document.getElementById('pin-search').oninput = function() { if (window._pinData) renderPinTable(window._pinData); };
+document.getElementById('pin-filter').onchange = function() { if (window._pinData) renderPinTable(window._pinData); };
+
+function loadDrivers() {
+  fetch('/api/hw/drivers').then(function(r){return r.json();}).then(function(drivers){
+    var el = document.getElementById('driver-list');
+    el.innerHTML = drivers.map(function(d){
+      return '<div class="driver-card">' +
+        '<div class="driver-info"><h4>' + esc(d.name) + '</h4><p>' + esc(d.desc) + '</p></div>' +
+        '<span class="driver-badge ' + (d.supported ? 'ok' : 'na') + '">' +
+          (d.supported ? 'Supported' : 'Not yet') +
+        '</span></div>';
+    }).join('');
+  });
+}
+
+function esc(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}

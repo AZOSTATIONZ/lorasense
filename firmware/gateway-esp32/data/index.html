@@ -257,6 +257,53 @@
         <button class="btn-small" id="add-rule-btn">Add rule</button>
       </div>
     </section>
+
+    <section class="settings-section">
+      <h3>Advanced</h3>
+      <button class="btn-small" id="open-studio-btn">Hardware Studio</button>
+    </section>
+  </div>
+
+  <!-- Hardware Configuration Studio -->
+  <div id="view-studio" style="display:none">
+    <div class="settings-header">
+      <h2>Hardware Studio</h2>
+      <button class="text-btn" id="studio-back-btn">&larr; Settings</button>
+    </div>
+
+    <!-- Controller overview -->
+    <section class="settings-section" id="studio-controller">
+      <h3>Controller</h3>
+      <div id="node-list"></div>
+    </section>
+
+    <!-- Pin resource table -->
+    <section class="settings-section" id="studio-pins">
+      <h3>Pin Map</h3>
+      <div class="studio-filter-row">
+        <input type="text" id="pin-search" placeholder="Search pins..." class="pin-search">
+        <select id="pin-filter">
+          <option value="all">All pins</option>
+          <option value="available">Available</option>
+          <option value="assigned">Assigned</option>
+          <option value="reserved">Reserved</option>
+        </select>
+      </div>
+      <div class="pin-table-wrap">
+        <table class="pin-table" id="pin-table">
+          <thead>
+            <tr><th>Pin</th><th>Capabilities</th><th>State</th><th>Used by</th></tr>
+          </thead>
+          <tbody id="pin-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Sensor drivers -->
+    <section class="settings-section" id="studio-drivers">
+      <h3>Sensor Drivers</h3>
+      <div id="driver-list"></div>
+    </section>
   </div>
 </main>
 

@@ -1,6 +1,6 @@
 // =====================================================================
 //  LoRaSense Gateway (ESP32)
-//  Phase 9: sensor history + charts, non-blocking commands, automation, protocol v2
+//  Hardware-aware config studio, non-blocking commands, automation, protocol v2
 // =====================================================================
 
 #include <WiFi.h>
@@ -12,11 +12,13 @@
 #include "secrets.h"
 #include "device.h"
 #include "config.h"
+#include "hardware.h"
 #include "history.h"
 #include "../common/protocol.h"
 
 WebServer server(80);
 ConfigManager config;
+HardwareManager hw;
 SensorHistory history;
 
 // --- LoRa pins ---
@@ -743,6 +745,121 @@ void handleSelfTest() {
 }
 
 // =====================================================================
+//  HTTP: Hardware Studio API
+// =====================================================================
+void handleGetNodes() {
+  JsonDocument doc;
+  JsonArray arr = doc.to<JsonArray>();
+  for (int i = 0; i < hw.nodeCount; i++) {
+    if (!hw.nodes[i].active) continue;
+    JsonObject obj = arr.add<JsonObject>();
+    obj["id"]      = hw.nodes[i].id;
+    obj["name"]    = hw.nodes[i].name;
+    obj["address"]  = hw.nodes[i].address;
+    obj["board"]   = hw.nodes[i].board;
+    obj["fw"]      = hw.nodes[i].fwVersion;
+    obj["online"]  = nodeOnline;
+    obj["relays"]  = MEGA_RELAY_COUNT;
+    obj["sensors"]  = 1;  // DHT11 currently
+    obj["free_pins"] = hw.countAvailablePins();
+  }
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+void handleGetPins() {
+  // Stream pin table as JSON array
+  String json = "[";
+  char nameBuf[6];
+  char capBuf[20];
+  for (int i = 0; i < MEGA_PIN_COUNT; i++) {
+    PinCap pc;
+    memcpy_P(&pc, &MEGA_PINS[i], sizeof(pc));
+
+    PinState st;
+    const char *usedBy;
+    hw.getPinState(pc.pin, st, usedBy);
+
+    HardwareManager::pinName(pc.pin, nameBuf, sizeof(nameBuf));
+    HardwareManager::capString(pc.caps, capBuf, sizeof(capBuf));
+
+    if (i > 0) json += ',';
+    json += "{\"pin\":";
+    json += pc.pin;
+    json += ",\"name\":\"";
+    json += nameBuf;
+    json += "\",\"caps\":\"";
+    json += capBuf;
+    json += "\",\"state\":";
+    json += (int)st;
+    json += ",\"used\":\"";
+    json += usedBy;
+    json += "\"}";
+  }
+  json += ']';
+  server.send(200, "application/json", json);
+}
+
+void handleGetDrivers() {
+  JsonDocument doc;
+  JsonArray arr = doc.to<JsonArray>();
+  for (int i = 0; i < SENSOR_DRIVER_COUNT; i++) {
+    const SensorDriver &d = SENSOR_DRIVERS[i];
+    JsonObject obj = arr.add<JsonObject>();
+    obj["type"]      = (int)d.type;
+    obj["name"]      = d.name;
+    obj["desc"]      = d.description;
+    obj["bus"]       = (int)d.bus;
+    obj["pins"]      = d.pinCount;
+    obj["supported"] = d.supported;
+    if (d.devNote) obj["dev_note"] = d.devNote;
+  }
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+void handleAddNode() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) {
+    server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+    return;
+  }
+  const char *id   = doc["id"] | "";
+  const char *name = doc["name"] | "";
+  uint8_t addr     = doc["address"] | 0;
+  const char *board = doc["board"] | "mega2560";
+  const char *fw   = doc["fw"] | "2.0";
+  if (!id[0] || !name[0] || addr == 0) {
+    server.send(400, "application/json", "{\"error\":\"need id, name, address\"}");
+    return;
+  }
+  if (!hw.addNode(id, name, addr, board, fw)) {
+    server.send(409, "application/json", "{\"error\":\"node exists or limit reached\"}");
+    return;
+  }
+  server.send(201, "application/json", "{\"ok\":true}");
+}
+
+void handleDeleteNode() {
+  String id = server.arg("id");
+  if (!id.length()) {
+    server.send(400, "application/json", "{\"error\":\"need id\"}");
+    return;
+  }
+  if (!hw.removeNode(id.c_str())) {
+    server.send(404, "application/json", "{\"error\":\"node not found\"}");
+    return;
+  }
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// =====================================================================
 //  Automation engine — evaluate rules against sensor readings
 // =====================================================================
 const uint32_t AUTOMATION_INTERVAL_MS = 5000;
@@ -848,6 +965,11 @@ void setup() {
   Serial.print("Zones: "); Serial.println(config.zoneCount);
   Serial.print("Rules: "); Serial.println(config.ruleCount);
 
+  // Hardware manager
+  hw.begin();
+  hw.ensureDefaultNode();
+  Serial.print("Nodes: "); Serial.println(hw.nodeCount);
+
   // Wi-Fi access point
   WiFi.mode(WIFI_AP);
   WiFi.softAP(AP_SSID, AP_PASSPHRASE);
@@ -891,6 +1013,13 @@ void setup() {
 
   // History API
   server.on("/api/history",            HTTP_GET,    handleHistory);
+
+  // Hardware Studio API
+  server.on("/api/hw/nodes",           HTTP_GET,    handleGetNodes);
+  server.on("/api/hw/nodes",           HTTP_POST,   handleAddNode);
+  server.on("/api/hw/nodes",           HTTP_DELETE, handleDeleteNode);
+  server.on("/api/hw/pins",            HTTP_GET,    handleGetPins);
+  server.on("/api/hw/drivers",         HTTP_GET,    handleGetDrivers);
 
   // Self-test
   server.on("/api/test",               HTTP_GET,    handleSelfTest);
