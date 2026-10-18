@@ -413,13 +413,22 @@ function renderSettings(cfg) {
     eqZone.appendChild(opt);
   }
 
-  // Available outputs for equipment form
+  // Relay outputs for equipment form — show all with availability
   var eqOutput = document.getElementById('eq-output');
   eqOutput.innerHTML = '<option value="255">None (monitor only)</option>';
-  for (var i = 0; i < cfg.available_outputs.length; i++) {
+  for (var ri = 0; ri < cfg.max_outputs; ri++) {
     var opt = document.createElement('option');
-    opt.value = cfg.available_outputs[i];
-    opt.textContent = 'Relay ' + (cfg.available_outputs[i] + 1);
+    opt.value = ri;
+    var owner = null;
+    for (var ei = 0; ei < cfg.equipment.length; ei++) {
+      if (cfg.equipment[ei].output === ri) { owner = cfg.equipment[ei]; break; }
+    }
+    if (owner) {
+      opt.textContent = 'Relay ' + (ri + 1) + (owner.pin_name ? ' (' + owner.pin_name + ')' : '') + ' — ' + owner.name;
+      opt.disabled = true;
+    } else {
+      opt.textContent = 'Relay ' + (ri + 1) + ' — Available';
+    }
     eqOutput.appendChild(opt);
   }
 
@@ -430,10 +439,13 @@ function renderSettings(cfg) {
     var eq = cfg.equipment[i];
     var div = document.createElement('div');
     div.className = 'eq-item';
-    var outputText = eq.output !== undefined && eq.output !== null ? 'Relay ' + (eq.output + 1) : 'No relay';
+    var outputText = eq.output !== undefined && eq.output !== null
+      ? 'Relay ' + (eq.output + 1) + (eq.pin_name ? ' (' + eq.pin_name + ')' : '')
+      : 'No relay';
+    var nodeText = eq.node_id ? ' · ' + eq.node_id : '';
     div.innerHTML =
       '<div><div class="eq-name">' + escHtml(eq.name) + '</div>' +
-      '<div class="eq-meta">' + eq.category + ' · ' + outputText + '</div></div>';
+      '<div class="eq-meta">' + eq.category + ' · ' + outputText + nodeText + '</div></div>';
     var delBtn = document.createElement('button');
     delBtn.className = 'btn-danger';
     delBtn.textContent = 'Remove';
@@ -497,6 +509,7 @@ document.getElementById('add-eq-btn').onclick = function() {
     name: name,
     category: document.getElementById('eq-category').value,
     zone_id: document.getElementById('eq-zone').value,
+    node_id: 'mega-001',
     output: parseInt(document.getElementById('eq-output').value)
   };
   if (data.output === 255) delete data.output;
@@ -504,14 +517,23 @@ document.getElementById('add-eq-btn').onclick = function() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
-  }).then(function(res) { return res.json(); })
+  }).then(function(res) { return res.json().then(function(j){ return {ok: res.ok, body: j}; }); })
     .then(function(r) {
       if (r.ok) {
         document.getElementById('eq-name').value = '';
         loadConfig();
+      } else {
+        showEqError(r.body.error || 'Failed to add equipment');
       }
     });
 };
+
+function showEqError(msg) {
+  var el = document.getElementById('eq-error');
+  el.textContent = msg;
+  el.style.display = '';
+  setTimeout(function() { el.style.display = 'none'; }, 5000);
+}
 
 function deleteEquipment(id) {
   fetch('/api/config/equipment?id=' + encodeURIComponent(id), { method: 'DELETE' })
@@ -868,6 +890,7 @@ var PIN_CSS    = ['avail',     'sys',    'radio', 'used'];
 
 function loadStudio() {
   loadNodes();
+  loadRelays();
   loadPins();
   loadDrivers();
 }
@@ -889,6 +912,23 @@ function loadNodes() {
           '<span>Free pins: ' + n.free_pins + '</span>' +
           '<span>' + (n.online ? '&#x1F7E2; Online' : '&#x1F534; Offline') + '</span>' +
         '</div></div>';
+    }).join('');
+  });
+}
+
+function loadRelays() {
+  fetch('/api/hw/relays').then(function(r){return r.json();}).then(function(relays){
+    var el = document.getElementById('relay-list');
+    el.innerHTML = relays.map(function(r){
+      var status = r.assigned
+        ? '<span class="driver-badge ok">' + esc(r.equipment) + '</span>'
+        : '<span class="driver-badge na">Unassigned</span>';
+      var stateClass = r.state === 'ON' ? 'ok' : 'na';
+      return '<div class="driver-card">' +
+        '<div class="driver-info"><h4>' + esc(r.label) + ' <small style="color:var(--muted)">(' + esc(r.pin) + ')</small></h4>' +
+        '<p>' + (r.assigned ? esc(r.equipment) : 'Available for assignment') + '</p></div>' +
+        '<span class="driver-badge ' + stateClass + '">' + r.state + '</span>' +
+        '</div>';
     }).join('');
   });
 }

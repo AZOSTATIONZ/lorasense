@@ -30,6 +30,7 @@ struct Equipment {
   char    name[NAME_LEN];
   char    category[16];    // lighting, fan, pump, socket, irrigation, heating, other
   char    zoneId[ID_LEN];
+  char    nodeId[ID_LEN];  // controller node this equipment belongs to
   uint8_t outputIndex;     // relay channel 0-3 (or 0xFF = unassigned)
   bool    active;          // whether this record is in use
 };
@@ -181,6 +182,7 @@ public:
       strlcpy(eq.name, obj["name"] | "", NAME_LEN);
       strlcpy(eq.category, obj["category"] | "other", sizeof(eq.category));
       strlcpy(eq.zoneId, obj["zone_id"] | "", ID_LEN);
+      strlcpy(eq.nodeId, obj["node_id"] | "mega-001", ID_LEN);
       eq.outputIndex = obj["output"] | 0xFF;
       eq.active = true;
       equipmentCount++;
@@ -202,6 +204,7 @@ public:
       obj["name"] = eq.name;
       obj["category"] = eq.category;
       obj["zone_id"] = eq.zoneId;
+      obj["node_id"] = eq.nodeId;
       if (eq.outputIndex != 0xFF) obj["output"] = eq.outputIndex;
     }
     serializeJson(doc, f);
@@ -235,7 +238,7 @@ public:
   }
 
   bool addEquipment(const char *id, const char *name, const char *category,
-                    const char *zoneId, uint8_t output) {
+                    const char *zoneId, const char *nodeId, uint8_t output) {
     if (equipmentCount >= MAX_EQUIPMENT) return false;
     if (findEquipment(id)) return false;
     if (output != 0xFF && isOutputTaken(output)) return false;
@@ -245,6 +248,7 @@ public:
     strlcpy(eq.name, name, NAME_LEN);
     strlcpy(eq.category, category, sizeof(eq.category));
     strlcpy(eq.zoneId, zoneId, ID_LEN);
+    strlcpy(eq.nodeId, nodeId, ID_LEN);
     eq.outputIndex = output;
     eq.active = true;
     equipmentCount++;
@@ -252,7 +256,7 @@ public:
   }
 
   bool updateEquipment(const char *id, const char *name, const char *category,
-                       const char *zoneId, uint8_t output) {
+                       const char *zoneId, const char *nodeId, uint8_t output) {
     Equipment *eq = findEquipment(id);
     if (!eq) return false;
     if (output != 0xFF && isOutputTaken(output, id)) return false;
@@ -260,6 +264,7 @@ public:
     if (name[0])     strlcpy(eq->name, name, NAME_LEN);
     if (category[0]) strlcpy(eq->category, category, sizeof(eq->category));
     strlcpy(eq->zoneId, zoneId, ID_LEN);
+    if (nodeId[0])   strlcpy(eq->nodeId, nodeId, ID_LEN);
     eq->outputIndex = output;
     return saveEquipment();
   }
@@ -381,9 +386,9 @@ public:
 
     addZone("z_main", "Main");
 
-    addEquipment("eq_1", "Living room light", "lighting", "z_main", 0);
-    addEquipment("eq_2", "Bedroom light",     "lighting", "z_main", 1);
-    addEquipment("eq_3", "Ceiling fan",        "fan",      "z_main", 2);
-    addEquipment("eq_4", "Water pump",         "pump",     "z_main", 3);
+    addEquipment("eq_1", "Living room light", "lighting", "z_main", "mega-001", 0);
+    addEquipment("eq_2", "Bedroom light",     "lighting", "z_main", "mega-001", 1);
+    addEquipment("eq_3", "Ceiling fan",        "fan",      "z_main", "mega-001", 2);
+    addEquipment("eq_4", "Water pump",         "pump",     "z_main", "mega-001", 3);
   }
 };

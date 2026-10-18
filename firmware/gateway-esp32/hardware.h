@@ -196,6 +196,7 @@ public:
 
   HardwareManager() : nodeCount(0) {
     memset(nodes, 0, sizeof(nodes));
+    clearRelayLabels();
   }
 
   bool begin() {
@@ -284,6 +285,20 @@ public:
     addNode("mega-001", "Main Controller", 0x02, "mega2560", "2.0");
   }
 
+  // ----- Relay-to-equipment name lookup (set by gateway after config loads) -----
+  const char *relayUsedBy[MEGA_RELAY_COUNT];
+
+  void clearRelayLabels() {
+    for (int i = 0; i < MEGA_RELAY_COUNT; i++)
+      relayUsedBy[i] = nullptr;
+  }
+
+  // Call after config loads to show equipment names on relay pins
+  void setRelayLabel(uint8_t relayIndex, const char *equipmentName) {
+    if (relayIndex < MEGA_RELAY_COUNT)
+      relayUsedBy[relayIndex] = equipmentName;
+  }
+
   // ----- Pin state query -----
   // Returns the state and "usedBy" string for a given pin on the Mega.
   // Combines static reservations + dynamic assignments (relays, DHT).
@@ -298,11 +313,11 @@ public:
         return;
       }
     }
-    // Check relay assignments
+    // Check relay assignments — show equipment name if assigned
     for (int i = 0; i < MEGA_RELAY_COUNT; i++) {
       if (MEGA_RELAY_PINS[i] == pin) {
         state = PIN_ASSIGNED;
-        usedBy = "Relay";
+        usedBy = (relayUsedBy[i] && relayUsedBy[i][0]) ? relayUsedBy[i] : "Relay (unassigned)";
         return;
       }
     }

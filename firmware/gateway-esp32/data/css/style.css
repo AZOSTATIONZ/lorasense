@@ -363,3 +363,7 @@ button:disabled { opacity: 0.5; cursor: wait; }
 }
 .driver-badge.ok { background: #d4edda; color: #155724; }
 .driver-badge.na { background: var(--bg-card); color: var(--muted); }
+.form-error {
+  background: #f8d7da; color: #721c24; padding: 8px 12px;
+  border-radius: 8px; font-size: 13px; margin-top: 8px;
+}

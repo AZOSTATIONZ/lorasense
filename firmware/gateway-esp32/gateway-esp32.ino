@@ -358,7 +358,15 @@ void handleGetConfig() {
     e["name"]     = eq.name;
     e["category"] = eq.category;
     e["zone_id"]  = eq.zoneId;
-    if (eq.outputIndex != 0xFF) e["output"] = eq.outputIndex;
+    e["node_id"]  = eq.nodeId;
+    if (eq.outputIndex != 0xFF) {
+      e["output"] = eq.outputIndex;
+      if (eq.outputIndex < MEGA_RELAY_COUNT) {
+        char pinBuf[6];
+        HardwareManager::pinName(MEGA_RELAY_PINS[eq.outputIndex], pinBuf, sizeof(pinBuf));
+        e["pin_name"] = String(pinBuf);
+      }
+    }
   }
 
   // Available relay outputs
@@ -441,6 +449,15 @@ void handleDeleteZone() {
   server.send(200, "application/json", "{\"ok\":true}");
 }
 
+void syncRelayLabels() {
+  hw.clearRelayLabels();
+  for (int i = 0; i < config.equipmentCount; i++) {
+    Equipment &eq = config.equipment[i];
+    if (eq.active && eq.outputIndex != 0xFF && eq.outputIndex < MEGA_RELAY_COUNT)
+      hw.setRelayLabel(eq.outputIndex, eq.name);
+  }
+}
+
 void handleAddEquipment() {
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
@@ -451,28 +468,37 @@ void handleAddEquipment() {
     server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
     return;
   }
-  const char *id   = doc["id"] | "";
-  const char *name = doc["name"] | "";
-  const char *cat  = doc["category"] | "other";
-  const char *zone = doc["zone_id"] | "";
-  uint8_t output   = doc["output"] | 0xFF;
+  const char *id     = doc["id"] | "";
+  const char *name   = doc["name"] | "";
+  const char *cat    = doc["category"] | "other";
+  const char *zone   = doc["zone_id"] | "";
+  const char *nodeId = doc["node_id"] | "mega-001";
+  uint8_t output     = doc["output"] | 0xFF;
 
   if (!id[0] || !name[0]) {
     server.send(400, "application/json", "{\"error\":\"need id and name\"}");
     return;
   }
   if (output != 0xFF && output >= MAX_OUTPUTS) {
-    server.send(400, "application/json", "{\"error\":\"invalid output index\"}");
+    String msg = "{\"error\":\"Relay " + String(output + 1) + " is unavailable on this controller (max " + String(MAX_OUTPUTS) + ")\"}";
+    server.send(400, "application/json", msg);
     return;
   }
   if (output != 0xFF && config.isOutputTaken(output)) {
-    server.send(409, "application/json", "{\"error\":\"output already assigned\"}");
+    Equipment *owner = config.findByOutput(output);
+    String msg = "{\"error\":\"Relay " + String(output + 1) + " is already assigned to " + String(owner ? owner->name : "another device") + "\"}";
+    server.send(409, "application/json", msg);
     return;
   }
-  if (!config.addEquipment(id, name, cat, zone, output)) {
+  if (nodeId[0] && !hw.findNode(nodeId)) {
+    server.send(400, "application/json", "{\"error\":\"controller node not found\"}");
+    return;
+  }
+  if (!config.addEquipment(id, name, cat, zone, nodeId, output)) {
     server.send(409, "application/json", "{\"error\":\"equipment exists or limit reached\"}");
     return;
   }
+  syncRelayLabels();
   server.send(201, "application/json", "{\"ok\":true}");
 }
 
@@ -486,24 +512,33 @@ void handleUpdateEquipment() {
     server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
     return;
   }
-  const char *id   = doc["id"] | "";
-  const char *name = doc["name"] | "";
-  const char *cat  = doc["category"] | "";
-  const char *zone = doc["zone_id"] | "";
-  uint8_t output   = doc["output"] | 0xFF;
+  const char *id     = doc["id"] | "";
+  const char *name   = doc["name"] | "";
+  const char *cat    = doc["category"] | "";
+  const char *zone   = doc["zone_id"] | "";
+  const char *nodeId = doc["node_id"] | "";
+  uint8_t output     = doc["output"] | 0xFF;
 
   if (!id[0]) {
     server.send(400, "application/json", "{\"error\":\"need id\"}");
     return;
   }
   if (output != 0xFF && output >= MAX_OUTPUTS) {
-    server.send(400, "application/json", "{\"error\":\"invalid output index\"}");
+    String msg = "{\"error\":\"Relay " + String(output + 1) + " is unavailable on this controller (max " + String(MAX_OUTPUTS) + ")\"}";
+    server.send(400, "application/json", msg);
     return;
   }
-  if (!config.updateEquipment(id, name, cat, zone, output)) {
-    server.send(404, "application/json", "{\"error\":\"not found or output taken\"}");
+  if (output != 0xFF && config.isOutputTaken(output, id)) {
+    Equipment *owner = config.findByOutput(output);
+    String msg = "{\"error\":\"Relay " + String(output + 1) + " is already assigned to " + String(owner ? owner->name : "another device") + "\"}";
+    server.send(409, "application/json", msg);
     return;
   }
+  if (!config.updateEquipment(id, name, cat, zone, nodeId, output)) {
+    server.send(404, "application/json", "{\"error\":\"not found\"}");
+    return;
+  }
+  syncRelayLabels();
   server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -517,6 +552,7 @@ void handleDeleteEquipment() {
     server.send(404, "application/json", "{\"error\":\"not found\"}");
     return;
   }
+  syncRelayLabels();
   server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -556,8 +592,10 @@ void handleOnboarding() {
     const char *cat  = e["category"] | "other";
     const char *zone = e["zone_id"] | "";
     uint8_t output   = e["output"] | 0xFF;
-    if (id[0] && name[0]) config.addEquipment(id, name, cat, zone, output);
+    const char *nodeId = e["node_id"] | "mega-001";
+    if (id[0] && name[0]) config.addEquipment(id, name, cat, zone, nodeId, output);
   }
+  syncRelayLabels();
 
   Serial.println("[Onboarding] Setup complete.");
   server.send(200, "application/json", "{\"ok\":true}");
@@ -801,6 +839,31 @@ void handleGetPins() {
   server.send(200, "application/json", json);
 }
 
+void handleGetRelays() {
+  JsonDocument doc;
+  JsonArray arr = doc.to<JsonArray>();
+  for (int i = 0; i < MEGA_RELAY_COUNT; i++) {
+    JsonObject obj = arr.add<JsonObject>();
+    obj["index"] = i;
+    obj["label"] = String("Relay ") + String(i + 1);
+    char pinBuf[6];
+    HardwareManager::pinName(MEGA_RELAY_PINS[i], pinBuf, sizeof(pinBuf));
+    obj["pin"] = String(pinBuf);
+    Equipment *eq = config.findByOutput(i);
+    if (eq) {
+      obj["assigned"]  = true;
+      obj["equipment"] = eq->name;
+      obj["eq_id"]     = eq->id;
+    } else {
+      obj["assigned"] = false;
+    }
+    obj["state"] = outputs[i].confirmedOn ? "ON" : "OFF";
+  }
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
 void handleGetDrivers() {
   JsonDocument doc;
   JsonArray arr = doc.to<JsonArray>();
@@ -968,6 +1031,7 @@ void setup() {
   // Hardware manager
   hw.begin();
   hw.ensureDefaultNode();
+  syncRelayLabels();
   Serial.print("Nodes: "); Serial.println(hw.nodeCount);
 
   // Wi-Fi access point
@@ -1019,6 +1083,7 @@ void setup() {
   server.on("/api/hw/nodes",           HTTP_POST,   handleAddNode);
   server.on("/api/hw/nodes",           HTTP_DELETE, handleDeleteNode);
   server.on("/api/hw/pins",            HTTP_GET,    handleGetPins);
+  server.on("/api/hw/relays",          HTTP_GET,    handleGetRelays);
   server.on("/api/hw/drivers",         HTTP_GET,    handleGetDrivers);
 
   // Self-test
