@@ -1,6 +1,6 @@
 // =====================================================================
 //  LoRaSense Gateway (ESP32)
-//  Phase 6: onboarding wizard + automation engine, protocol v2, config persistence
+//  Phase 8: non-blocking command handler, automation engine, protocol v2
 // =====================================================================
 
 #include <WiFi.h>
@@ -80,60 +80,30 @@ bool serveFile(const String &path) {
 }
 
 // =====================================================================
-//  LoRa send + wait for ACK
+//  LoRa send (non-blocking) — transmit one command packet and return
 // =====================================================================
-bool sendAndWaitAck(uint8_t outputIdx, bool requestedOn, uint8_t seq) {
+void sendCommand(uint8_t outputIdx) {
+  OutputState &o = outputs[outputIdx];
+
   CmdSetPayload cmd;
   cmd.deviceIndex = outputIdx;
-  cmd.requestedOn = requestedOn ? 1 : 0;
+  cmd.requestedOn = o.requestedOn ? 1 : 0;
 
   uint8_t buf[FRAME_MAX];
   uint8_t len = buildFrame(buf, ADDR_NODE1, ADDR_GATEWAY,
-                           MSG_CMD_SET, seq, &cmd, sizeof(cmd));
+                           MSG_CMD_SET, o.seq, &cmd, sizeof(cmd));
 
-  for (uint8_t attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    if (attempt > 0) delay(RETRY_DELAY_MS);
+  LoRa.beginPacket();
+  LoRa.write(buf, len);
+  LoRa.endPacket();
 
-    LoRa.beginPacket();
-    LoRa.write(buf, len);
-    LoRa.endPacket();
-    Serial.print("[LoRa] TX cmd seq="); Serial.print(seq);
-    Serial.print(" output="); Serial.print(outputIdx);
-    Serial.print(" on="); Serial.print(requestedOn);
-    Serial.print(" attempt="); Serial.println(attempt + 1);
+  o.sentAt = millis();
+  o.status = CMD_SENT;
 
-    uint32_t start = millis();
-    while (millis() - start < ACK_TIMEOUT_MS) {
-      int n = LoRa.parsePacket();
-      if (n < (int)(HEADER_SIZE + CRC_SIZE)) continue;
-      if (n > FRAME_MAX) continue;
-
-      uint8_t rxBuf[FRAME_MAX];
-      for (int i = 0; i < n; i++) rxBuf[i] = LoRa.read();
-      if (!validateFrame(rxBuf, n)) { Serial.println("[LoRa] RX bad CRC"); continue; }
-
-      FrameHeader *hdr = (FrameHeader *)rxBuf;
-      if (hdr->dst != ADDR_GATEWAY || hdr->src != ADDR_NODE1) continue;
-      if (hdr->ver != PROTOCOL_VERSION) continue;
-
-      if (hdr->type == MSG_ACK && hdr->seq == seq) {
-        AckPayload *ack = (AckPayload *)(rxBuf + HEADER_SIZE);
-        nodeOnline = true;
-        lastNodeHeard = millis();
-
-        if (ack->deviceIndex < MAX_OUTPUTS) {
-          outputs[ack->deviceIndex].confirmedOn = (ack->actualOn == 1);
-          outputs[ack->deviceIndex].status = CMD_CONFIRMED;
-        }
-        return true;
-      }
-
-      if (hdr->type == MSG_TELEMETRY) handleTelemetry(rxBuf, n);
-      else if (hdr->type == MSG_HEARTBEAT) { nodeOnline = true; lastNodeHeard = millis(); }
-    }
-    Serial.println("[LoRa] timeout, retrying...");
-  }
-  return false;
+  Serial.print("[LoRa] TX cmd seq="); Serial.print(o.seq);
+  Serial.print(" output="); Serial.print(outputIdx);
+  Serial.print(" on="); Serial.print(o.requestedOn);
+  Serial.print(" attempt="); Serial.println(o.attempt + 1);
 }
 
 // =====================================================================
@@ -178,7 +148,21 @@ void checkIncoming() {
     return;
   }
 
-  if (hdr->type == MSG_TELEMETRY) handleTelemetry(buf, n);
+  if (hdr->type == MSG_ACK) {
+    AckPayload *ack = (AckPayload *)(buf + HEADER_SIZE);
+    nodeOnline = true;
+    lastNodeHeard = millis();
+    // Match ACK to the output waiting for it
+    if (ack->deviceIndex < MAX_OUTPUTS &&
+        outputs[ack->deviceIndex].status == CMD_SENT &&
+        hdr->seq == outputs[ack->deviceIndex].seq) {
+      outputs[ack->deviceIndex].confirmedOn = (ack->actualOn == 1);
+      outputs[ack->deviceIndex].status = CMD_CONFIRMED;
+      Serial.print("[LoRa] ACK output="); Serial.print(ack->deviceIndex);
+      Serial.print(" on="); Serial.println(ack->actualOn);
+    }
+  }
+  else if (hdr->type == MSG_TELEMETRY) handleTelemetry(buf, n);
   else if (hdr->type == MSG_HEARTBEAT) {
     nodeOnline = true; lastNodeHeard = millis();
     Serial.println("[LoRa] Heartbeat received");
@@ -201,17 +185,32 @@ void sendKeepalive() {
 }
 
 // =====================================================================
-//  Process pending commands
+//  Process pending commands (non-blocking state machine)
 // =====================================================================
 void processPendingCommands() {
   for (int i = 0; i < MAX_OUTPUTS; i++) {
-    if (outputs[i].status != CMD_PENDING) continue;
-    bool ok = sendAndWaitAck(i, outputs[i].requestedOn, outputs[i].seq);
-    if (!ok) {
-      outputs[i].status = CMD_FAILED;
-      Serial.print("[LoRa] FAILED output="); Serial.println(i);
+    OutputState &o = outputs[i];
+
+    if (o.status == CMD_PENDING) {
+      o.attempt = 0;
+      sendCommand(i);
+      return;
     }
-    return;
+
+    if (o.status == CMD_SENT) {
+      if (millis() - o.sentAt < ACK_TIMEOUT_MS) return;
+      // Timed out — retry or fail
+      o.attempt++;
+      if (o.attempt < MAX_RETRIES) {
+        Serial.print("[LoRa] timeout output="); Serial.print(i);
+        Serial.print(", retry "); Serial.println(o.attempt + 1);
+        sendCommand(i);
+      } else {
+        o.status = CMD_FAILED;
+        Serial.print("[LoRa] FAILED output="); Serial.println(i);
+      }
+      return;
+    }
   }
 }
 
@@ -309,8 +308,9 @@ void handleSetDevice() {
     server.send(400, "application/json", "{\"error\":\"state must be on or off\"}");
     return;
   }
-  if (outputs[eq->outputIndex].status == CMD_PENDING) {
-    server.send(409, "application/json", "{\"error\":\"command pending\"}");
+  if (outputs[eq->outputIndex].status == CMD_PENDING ||
+      outputs[eq->outputIndex].status == CMD_SENT) {
+    server.send(409, "application/json", "{\"error\":\"command in progress\"}");
     return;
   }
 
@@ -318,6 +318,7 @@ void handleSetDevice() {
   outputs[eq->outputIndex].status      = CMD_PENDING;
   outputs[eq->outputIndex].sentAt      = millis();
   outputs[eq->outputIndex].seq         = nextSeq++;
+  outputs[eq->outputIndex].attempt     = 0;
 
   server.send(202, "application/json", "{\"status\":\"PENDING\"}");
 }
@@ -692,22 +693,26 @@ void evaluateRules() {
 
     if (shouldTrigger && !r.triggered) {
       r.triggered = true;
-      if (outputs[eq->outputIndex].status != CMD_PENDING) {
+      if (outputs[eq->outputIndex].status != CMD_PENDING &&
+          outputs[eq->outputIndex].status != CMD_SENT) {
         outputs[eq->outputIndex].requestedOn = true;
         outputs[eq->outputIndex].status      = CMD_PENDING;
         outputs[eq->outputIndex].sentAt      = millis();
         outputs[eq->outputIndex].seq         = nextSeq++;
+        outputs[eq->outputIndex].attempt     = 0;
         Serial.print("[Auto] Rule '"); Serial.print(r.name);
         Serial.print("' TRIGGERED -> "); Serial.print(eq->name);
         Serial.println(" ON");
       }
     } else if (!shouldTrigger && r.triggered) {
       r.triggered = false;
-      if (outputs[eq->outputIndex].status != CMD_PENDING) {
+      if (outputs[eq->outputIndex].status != CMD_PENDING &&
+          outputs[eq->outputIndex].status != CMD_SENT) {
         outputs[eq->outputIndex].requestedOn = false;
         outputs[eq->outputIndex].status      = CMD_PENDING;
         outputs[eq->outputIndex].sentAt      = millis();
         outputs[eq->outputIndex].seq         = nextSeq++;
+        outputs[eq->outputIndex].attempt     = 0;
         Serial.print("[Auto] Rule '"); Serial.print(r.name);
         Serial.print("' RELEASED -> "); Serial.print(eq->name);
         Serial.println(" OFF");
@@ -738,6 +743,7 @@ void setup() {
     outputs[i].status = CMD_IDLE;
     outputs[i].sentAt = 0;
     outputs[i].seq = 0;
+    outputs[i].attempt = 0;
   }
 
   // LittleFS

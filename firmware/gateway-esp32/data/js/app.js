@@ -141,7 +141,7 @@ function drawDevices(s) {
     for (var i = 0; i < devs.length; i++) {
       var d = devs[i];
       var hasOutput = d.output !== null && d.output !== undefined;
-      var pending = d.status === 'PENDING';
+      var pending = d.status === 'PENDING' || d.status === 'SENT';
 
       var row = document.createElement('div');
       row.className = 'device';
