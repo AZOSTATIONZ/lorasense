@@ -19,6 +19,108 @@
 <main>
   <div class="banner" id="banner">Lost connection to the gateway. Retrying&hellip;</div>
 
+  <!-- Onboarding wizard -->
+  <div id="view-wizard" style="display:none">
+    <div class="wizard-card">
+      <div class="wizard-progress"><div class="wizard-bar" id="wizard-bar"></div></div>
+
+      <!-- Step 1: Welcome + name -->
+      <div class="wizard-step" id="wiz-1">
+        <h2>Welcome to LoRaSense</h2>
+        <p class="wizard-desc">Let's set up your control system. First, give your environment a name.</p>
+        <div class="form-row">
+          <label>Name</label>
+          <input type="text" id="wiz-env-name" maxlength="31" placeholder="My Home" value="My Home">
+        </div>
+        <button class="btn-primary" id="wiz-next-1">Next</button>
+      </div>
+
+      <!-- Step 2: Environment type -->
+      <div class="wizard-step" id="wiz-2" style="display:none">
+        <h2>Environment Type</h2>
+        <p class="wizard-desc">What kind of space are you monitoring?</p>
+        <div class="wiz-type-grid" id="wiz-type-grid">
+          <button class="wiz-type-btn selected" data-type="home">Home</button>
+          <button class="wiz-type-btn" data-type="farm">Farm</button>
+          <button class="wiz-type-btn" data-type="greenhouse">Greenhouse</button>
+          <button class="wiz-type-btn" data-type="industrial">Industrial</button>
+          <button class="wiz-type-btn" data-type="lab">Laboratory</button>
+          <button class="wiz-type-btn" data-type="custom">Custom</button>
+        </div>
+        <div class="wiz-nav">
+          <button class="text-btn" id="wiz-back-2">&larr; Back</button>
+          <button class="btn-primary" id="wiz-next-2">Next</button>
+        </div>
+      </div>
+
+      <!-- Step 3: Zones -->
+      <div class="wizard-step" id="wiz-3" style="display:none">
+        <h2>Add Zones</h2>
+        <p class="wizard-desc">Zones group your equipment by location. Add at least one.</p>
+        <div id="wiz-zone-list"></div>
+        <div class="form-row">
+          <input type="text" id="wiz-zone-name" maxlength="31" placeholder="e.g. Living room">
+          <button class="btn-small" id="wiz-add-zone">Add</button>
+        </div>
+        <div class="wiz-nav">
+          <button class="text-btn" id="wiz-back-3">&larr; Back</button>
+          <button class="btn-primary" id="wiz-next-3">Next</button>
+        </div>
+      </div>
+
+      <!-- Step 4: Equipment -->
+      <div class="wizard-step" id="wiz-4" style="display:none">
+        <h2>Add Equipment</h2>
+        <p class="wizard-desc">What devices will LoRaSense control? Assign each to a relay output.</p>
+        <div id="wiz-eq-list"></div>
+        <div class="wiz-eq-form">
+          <div class="form-row">
+            <label>Name</label>
+            <input type="text" id="wiz-eq-name" maxlength="31" placeholder="Living room light">
+          </div>
+          <div class="form-row">
+            <label>Category</label>
+            <select id="wiz-eq-cat">
+              <option value="lighting">Lighting</option>
+              <option value="fan">Fan / Ventilation</option>
+              <option value="pump">Water pump</option>
+              <option value="socket">Socket</option>
+              <option value="irrigation">Irrigation</option>
+              <option value="heating">Heating</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>Zone</label>
+            <select id="wiz-eq-zone"></select>
+          </div>
+          <div class="form-row">
+            <label>Relay</label>
+            <select id="wiz-eq-relay">
+              <option value="255">None</option>
+              <option value="0">Relay 1</option>
+              <option value="1">Relay 2</option>
+              <option value="2">Relay 3</option>
+              <option value="3">Relay 4</option>
+            </select>
+          </div>
+          <button class="btn-small" id="wiz-add-eq">Add equipment</button>
+        </div>
+        <div class="wiz-nav">
+          <button class="text-btn" id="wiz-back-4">&larr; Back</button>
+          <button class="btn-primary" id="wiz-finish">Finish Setup</button>
+        </div>
+      </div>
+
+      <!-- Step 5: Done -->
+      <div class="wizard-step" id="wiz-5" style="display:none">
+        <h2>All Set!</h2>
+        <p class="wizard-desc">Your LoRaSense system is configured and ready to use.</p>
+        <button class="btn-primary" id="wiz-go-dashboard">Go to Dashboard</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Dashboard view -->
   <div id="view-dashboard">
     <div class="stats" id="stats"></div>

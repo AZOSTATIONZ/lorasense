@@ -155,3 +155,59 @@ button:disabled { opacity: 0.5; cursor: wait; }
 .add-rule-form {
   margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);
 }
+
+/* Onboarding wizard */
+.wizard-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 16px; padding: 24px 20px; margin-top: 8px;
+}
+.wizard-progress {
+  height: 4px; background: var(--border); border-radius: 2px;
+  margin-bottom: 20px; overflow: hidden;
+}
+.wizard-bar {
+  height: 100%; width: 20%; background: var(--accent);
+  border-radius: 2px; transition: width 0.3s ease;
+}
+.wizard-step h2 { margin: 0 0 4px; font-size: 18px; }
+.wizard-desc { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
+.wiz-type-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr);
+  gap: 8px; margin-bottom: 16px;
+}
+.wiz-type-btn {
+  background: var(--input-bg); color: var(--text); border: 2px solid var(--border);
+  border-radius: 10px; padding: 12px; font-size: 14px; font-weight: 500;
+  cursor: pointer; transition: border-color 0.15s;
+}
+.wiz-type-btn.selected {
+  border-color: var(--accent); background: var(--accent-soft);
+}
+.wiz-nav {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 16px;
+}
+.btn-primary {
+  padding: 12px 24px; border-radius: 10px; border: 0;
+  font-size: 15px; font-weight: 600; cursor: pointer;
+  background: var(--accent); color: #fff;
+}
+.wiz-zone-tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--accent-soft); color: var(--accent);
+  padding: 6px 10px; border-radius: 8px; margin: 0 6px 6px 0;
+  font-size: 13px; font-weight: 500;
+}
+.wiz-zone-tag button {
+  background: none; border: 0; color: var(--muted); cursor: pointer;
+  font-size: 14px; padding: 0; line-height: 1;
+}
+.wiz-eq-form {
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);
+}
+.wiz-eq-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px;
+}
+.wiz-eq-item:last-child { border-bottom: 0; }
+.wiz-eq-meta { font-size: 12px; color: var(--muted); }

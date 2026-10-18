@@ -406,7 +406,212 @@ function deleteRule(id) {
 }
 
 // =====================================================================
-//  Start
+//  Onboarding Wizard
 // =====================================================================
-refresh();
-pollTimer = setInterval(refresh, 1000);
+var wizStep = 1;
+var wizData = {
+  env_name: 'My Home',
+  env_type: 'home',
+  zones: [],
+  equipment: []
+};
+var wizRelayUsed = {};
+
+function showWizard() {
+  document.getElementById('view-dashboard').style.display = 'none';
+  document.getElementById('view-settings').style.display = 'none';
+  document.getElementById('view-wizard').style.display = '';
+  document.querySelector('header').style.display = 'none';
+  clearInterval(pollTimer);
+  wizGoTo(1);
+}
+
+function wizGoTo(step) {
+  wizStep = step;
+  for (var i = 1; i <= 5; i++) {
+    document.getElementById('wiz-' + i).style.display = (i === step) ? '' : 'none';
+  }
+  document.getElementById('wizard-bar').style.width = (step * 20) + '%';
+}
+
+// Step 1: name
+document.getElementById('wiz-next-1').onclick = function() {
+  var name = document.getElementById('wiz-env-name').value.trim();
+  if (!name) return;
+  wizData.env_name = name;
+  wizGoTo(2);
+};
+
+// Step 2: type
+var typeGrid = document.getElementById('wiz-type-grid');
+typeGrid.onclick = function(e) {
+  var btn = e.target.closest('.wiz-type-btn');
+  if (!btn) return;
+  var btns = typeGrid.querySelectorAll('.wiz-type-btn');
+  for (var i = 0; i < btns.length; i++) btns[i].className = 'wiz-type-btn';
+  btn.className = 'wiz-type-btn selected';
+  wizData.env_type = btn.getAttribute('data-type');
+};
+document.getElementById('wiz-back-2').onclick = function() { wizGoTo(1); };
+document.getElementById('wiz-next-2').onclick = function() { wizGoTo(3); };
+
+// Step 3: zones
+function renderWizZones() {
+  var list = document.getElementById('wiz-zone-list');
+  list.innerHTML = '';
+  for (var i = 0; i < wizData.zones.length; i++) {
+    var tag = document.createElement('span');
+    tag.className = 'wiz-zone-tag';
+    tag.innerHTML = escHtml(wizData.zones[i].name) + ' ';
+    var del = document.createElement('button');
+    del.textContent = '×';
+    (function(idx) {
+      del.onclick = function() {
+        wizData.zones.splice(idx, 1);
+        renderWizZones();
+      };
+    })(i);
+    tag.appendChild(del);
+    list.appendChild(tag);
+  }
+}
+
+document.getElementById('wiz-add-zone').onclick = function() {
+  var input = document.getElementById('wiz-zone-name');
+  var name = input.value.trim();
+  if (!name) return;
+  var id = 'z_' + name.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 12);
+  wizData.zones.push({ id: id, name: name });
+  input.value = '';
+  renderWizZones();
+};
+
+document.getElementById('wiz-back-3').onclick = function() { wizGoTo(2); };
+document.getElementById('wiz-next-3').onclick = function() {
+  if (wizData.zones.length === 0) {
+    wizData.zones.push({ id: 'z_main', name: 'Main' });
+    renderWizZones();
+  }
+  // Populate zone dropdown for equipment step
+  var sel = document.getElementById('wiz-eq-zone');
+  sel.innerHTML = '';
+  for (var i = 0; i < wizData.zones.length; i++) {
+    var opt = document.createElement('option');
+    opt.value = wizData.zones[i].id;
+    opt.textContent = wizData.zones[i].name;
+    sel.appendChild(opt);
+  }
+  updateWizRelayDropdown();
+  renderWizEquipment();
+  wizGoTo(4);
+};
+
+// Step 4: equipment
+function updateWizRelayDropdown() {
+  var sel = document.getElementById('wiz-eq-relay');
+  sel.innerHTML = '<option value="255">None</option>';
+  for (var r = 0; r < 4; r++) {
+    if (!wizRelayUsed[r]) {
+      var opt = document.createElement('option');
+      opt.value = r;
+      opt.textContent = 'Relay ' + (r + 1);
+      sel.appendChild(opt);
+    }
+  }
+}
+
+function renderWizEquipment() {
+  var list = document.getElementById('wiz-eq-list');
+  list.innerHTML = '';
+  for (var i = 0; i < wizData.equipment.length; i++) {
+    var eq = wizData.equipment[i];
+    var div = document.createElement('div');
+    div.className = 'wiz-eq-item';
+    var relayText = eq.output !== 255 ? 'Relay ' + (eq.output + 1) : 'No relay';
+    div.innerHTML =
+      '<div><div style="font-weight:500">' + escHtml(eq.name) + '</div>' +
+      '<div class="wiz-eq-meta">' + eq.category + ' · ' + relayText + '</div></div>';
+    var del = document.createElement('button');
+    del.className = 'btn-danger';
+    del.textContent = 'Remove';
+    (function(idx) {
+      del.onclick = function() {
+        var removed = wizData.equipment.splice(idx, 1)[0];
+        if (removed.output !== 255) delete wizRelayUsed[removed.output];
+        updateWizRelayDropdown();
+        renderWizEquipment();
+      };
+    })(i);
+    div.appendChild(del);
+    list.appendChild(div);
+  }
+}
+
+document.getElementById('wiz-add-eq').onclick = function() {
+  var name = document.getElementById('wiz-eq-name').value.trim();
+  if (!name) return;
+  var relay = parseInt(document.getElementById('wiz-eq-relay').value);
+  var id = 'eq_' + Date.now().toString(36);
+  var eq = {
+    id: id,
+    name: name,
+    category: document.getElementById('wiz-eq-cat').value,
+    zone_id: document.getElementById('wiz-eq-zone').value,
+    output: relay
+  };
+  wizData.equipment.push(eq);
+  if (relay !== 255) wizRelayUsed[relay] = true;
+  document.getElementById('wiz-eq-name').value = '';
+  updateWizRelayDropdown();
+  renderWizEquipment();
+};
+
+document.getElementById('wiz-back-4').onclick = function() { wizGoTo(3); };
+
+document.getElementById('wiz-finish').onclick = function() {
+  var payload = {
+    env_name: wizData.env_name,
+    env_type: wizData.env_type,
+    zones: wizData.zones,
+    equipment: []
+  };
+  for (var i = 0; i < wizData.equipment.length; i++) {
+    var eq = wizData.equipment[i];
+    var obj = { id: eq.id, name: eq.name, category: eq.category, zone_id: eq.zone_id };
+    if (eq.output !== 255) obj.output = eq.output;
+    payload.equipment.push(obj);
+  }
+
+  fetch('/api/onboarding', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(function(res) { return res.json(); })
+    .then(function(r) {
+      if (r.ok) wizGoTo(5);
+    });
+};
+
+document.getElementById('wiz-go-dashboard').onclick = function() {
+  document.querySelector('header').style.display = '';
+  document.getElementById('view-wizard').style.display = 'none';
+  showView('dashboard');
+};
+
+// =====================================================================
+//  Start — check if onboarding needed
+// =====================================================================
+fetch('/api/state')
+  .then(function(res) { return res.json(); })
+  .then(function(s) {
+    if (!s.configured) {
+      showWizard();
+    } else {
+      refresh();
+      pollTimer = setInterval(refresh, 1000);
+    }
+  })
+  .catch(function() {
+    refresh();
+    pollTimer = setInterval(refresh, 1000);
+  });

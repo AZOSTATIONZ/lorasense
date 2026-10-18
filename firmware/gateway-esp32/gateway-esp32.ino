@@ -1,6 +1,6 @@
 // =====================================================================
 //  LoRaSense Gateway (ESP32)
-//  Phase 5: automation engine + protocol v2, DHT11 telemetry, config persistence
+//  Phase 6: onboarding wizard + automation engine, protocol v2, config persistence
 // =====================================================================
 
 #include <WiFi.h>
@@ -230,6 +230,7 @@ void handleState() {
   doc["humidity_pct"]  = serialized(String(nodeHumidity, 1));
   doc["rssi"]         = LoRa.packetRssi();
   doc["protocol_ver"] = PROTOCOL_VERSION;
+  doc["configured"]   = config.env.configured;
 
   // Build devices array from equipment registry + output states
   JsonArray devArr = doc["devices"].to<JsonArray>();
@@ -490,6 +491,49 @@ void handleDeleteEquipment() {
 }
 
 // =====================================================================
+//  HTTP: Onboarding — complete first-time setup in one request
+// =====================================================================
+void handleOnboarding() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) {
+    server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+    return;
+  }
+
+  // Environment
+  strlcpy(config.env.name, doc["env_name"] | "My Home", NAME_LEN);
+  strlcpy(config.env.type, doc["env_type"] | "home", sizeof(config.env.type));
+  config.env.configured = true;
+  config.saveEnvironment();
+
+  // Zones
+  JsonArray zones = doc["zones"].as<JsonArray>();
+  for (JsonObject z : zones) {
+    const char *id   = z["id"] | "";
+    const char *name = z["name"] | "";
+    if (id[0] && name[0]) config.addZone(id, name);
+  }
+
+  // Equipment
+  JsonArray equip = doc["equipment"].as<JsonArray>();
+  for (JsonObject e : equip) {
+    const char *id   = e["id"] | "";
+    const char *name = e["name"] | "";
+    const char *cat  = e["category"] | "other";
+    const char *zone = e["zone_id"] | "";
+    uint8_t output   = e["output"] | 0xFF;
+    if (id[0] && name[0]) config.addEquipment(id, name, cat, zone, output);
+  }
+
+  Serial.println("[Onboarding] Setup complete.");
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// =====================================================================
 //  HTTP: Rules API
 // =====================================================================
 void handleGetRules() {
@@ -686,8 +730,8 @@ void setup() {
   // Load config from flash
   config.begin();
   if (!config.env.configured) {
-    Serial.println("First boot: creating default config...");
-    config.createDefaults();
+    Serial.println("First boot: waiting for onboarding wizard...");
+    LittleFS.mkdir("/config");
   }
   Serial.print("Environment: "); Serial.print(config.env.name);
   Serial.print(" ("); Serial.print(config.env.type); Serial.println(")");
@@ -726,6 +770,9 @@ void setup() {
   server.on("/api/config/equipment",    HTTP_POST,   handleAddEquipment);
   server.on("/api/config/equipment",    HTTP_PUT,    handleUpdateEquipment);
   server.on("/api/config/equipment",    HTTP_DELETE, handleDeleteEquipment);
+
+  // Onboarding
+  server.on("/api/onboarding",          HTTP_POST,   handleOnboarding);
 
   // Rules API
   server.on("/api/rules",              HTTP_GET,    handleGetRules);
