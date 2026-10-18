@@ -34,75 +34,160 @@ function formatUptime(sec) {
   return Math.floor(sec / 3600) + 'h ' + Math.floor((sec % 3600) / 60) + 'm';
 }
 
-function drawStats(s) {
-  var box = document.getElementById('stats');
-  var tempVal = s.temperature_c !== undefined ? parseFloat(s.temperature_c).toFixed(1) + ' °C' : '--';
-  var humVal = s.humidity_pct !== undefined ? parseFloat(s.humidity_pct).toFixed(1) + ' %' : '--';
-  var nodeClass = s.node_online ? ' online' : ' offline';
-  var nodeText = s.node_online ? 'Online' : 'Offline';
+var categoryIcons = {
+  lighting: '☀', fan: '❁', pump: '⬆', socket: '⚡',
+  irrigation: '\u{1F4A7}', heating: '\u{1F525}', other: '⚙'
+};
 
-  box.innerHTML =
-    '<div class="stat"><div class="label">Temperature</div><div class="value">' + tempVal + '</div></div>' +
-    '<div class="stat"><div class="label">Humidity</div><div class="value">' + humVal + '</div></div>' +
-    '<div class="stat"><div class="label">Node</div><div class="value' + nodeClass + '">' + nodeText + '</div></div>' +
-    '<div class="stat"><div class="label">Uptime</div><div class="value">' + formatUptime(s.uptime_s) + '</div></div>';
+function signalLabel(rssi) {
+  if (rssi >= -60) return 'Strong';
+  if (rssi >= -80) return 'Good';
+  if (rssi >= -100) return 'Weak';
+  return 'No signal';
 }
 
-function drawDevices(devices) {
+function drawSensorHero(s) {
+  var box = document.getElementById('sensor-hero');
+  var tempVal = s.temperature_c !== undefined ? parseFloat(s.temperature_c).toFixed(1) : '--';
+  var humVal = s.humidity_pct !== undefined ? parseFloat(s.humidity_pct).toFixed(0) : '--';
+
+  box.innerHTML =
+    '<div class="hero-card">' +
+      '<div class="hero-icon">\u{1F321}</div>' +
+      '<div class="hero-value">' + tempVal + '<span style="font-size:18px;font-weight:400"> °C</span></div>' +
+      '<div class="hero-label">Temperature</div>' +
+    '</div>' +
+    '<div class="hero-card">' +
+      '<div class="hero-icon">\u{1F4A7}</div>' +
+      '<div class="hero-value">' + humVal + '<span style="font-size:18px;font-weight:400"> %</span></div>' +
+      '<div class="hero-label">Humidity</div>' +
+    '</div>';
+}
+
+function drawStatusBar(s) {
+  var bar = document.getElementById('status-bar');
+  var dotClass = s.node_online ? 'online' : 'offline';
+  var nodeText = s.node_online ? 'Node online' : 'Node offline';
+  var rssiText = s.node_online ? signalLabel(s.rssi) + ' (' + s.rssi + ' dBm)' : '--';
+
+  bar.innerHTML =
+    '<div class="status-item"><span class="status-dot ' + dotClass + '"></span>' + nodeText + '</div>' +
+    '<div class="spacer"></div>' +
+    '<div class="status-item">\u{1F4F6} ' + rssiText + '</div>' +
+    '<div class="status-item">⏱ ' + formatUptime(s.uptime_s) + '</div>';
+}
+
+function drawActiveRules(s) {
+  var box = document.getElementById('active-rules');
+  box.innerHTML = '';
+  if (!s.rules) return;
+  for (var i = 0; i < s.rules.length; i++) {
+    var r = s.rules[i];
+    if (!r.triggered || !r.enabled) continue;
+    var eqName = r.equipment;
+    if (s.devices) {
+      for (var j = 0; j < s.devices.length; j++) {
+        if (s.devices[j].id === r.equipment) { eqName = s.devices[j].name; break; }
+      }
+    }
+    var div = document.createElement('div');
+    div.className = 'active-rule-bar';
+    div.innerHTML = '<span class="ar-icon">⚡</span> <span class="ar-name">' +
+      escHtml(r.name) + '</span> → ' + escHtml(eqName);
+    box.appendChild(div);
+  }
+}
+
+function drawDevices(s) {
+  var devices = s.devices;
   var box = document.getElementById('devices');
   if (!devices || devices.length === 0) {
     box.innerHTML = '<div class="empty-state">No equipment configured.<br>Tap ⚙ to add equipment.</div>';
     return;
   }
 
-  box.innerHTML = '';
+  // Build zone name map
+  var zoneNames = {};
+  if (s.zones) {
+    for (var i = 0; i < s.zones.length; i++) {
+      zoneNames[s.zones[i].id] = s.zones[i].name;
+    }
+  }
+
+  // Group by zone
+  var zones = {};
+  var zoneOrder = [];
   for (var i = 0; i < devices.length; i++) {
     var d = devices[i];
-    var hasOutput = d.output !== null && d.output !== undefined;
-    var pending = d.status === 'PENDING';
-    var stateText, stateClass;
+    var zk = d.zone_id || '_none';
+    if (!zones[zk]) { zones[zk] = []; zoneOrder.push(zk); }
+    zones[zk].push(d);
+  }
 
-    if (!hasOutput) {
-      stateText = 'No relay';
-      stateClass = 'state-off';
-    } else if (pending) {
-      stateText = 'Waiting…';
-      stateClass = 'state-pending';
-    } else if (d.status === 'FAILED') {
-      stateText = 'Failed';
-      stateClass = 'state-failed';
-    } else {
-      stateText = d.on ? 'ON' : 'OFF';
-      stateClass = d.on ? 'state-on' : 'state-off';
+  box.innerHTML = '';
+  for (var zi = 0; zi < zoneOrder.length; zi++) {
+    var zoneId = zoneOrder[zi];
+    var section = document.createElement('div');
+    section.className = 'zone-section';
+
+    if (zoneOrder.length > 1 || zoneId !== '_none') {
+      var title = document.createElement('div');
+      title.className = 'zone-title';
+      title.textContent = zoneId === '_none' ? 'Unassigned' : (zoneNames[zoneId] || zoneId);
+      section.appendChild(title);
     }
 
-    var row = document.createElement('div');
-    row.className = 'device';
+    var devs = zones[zoneId];
+    for (var i = 0; i < devs.length; i++) {
+      var d = devs[i];
+      var hasOutput = d.output !== null && d.output !== undefined;
+      var pending = d.status === 'PENDING';
 
-    var btnHtml = '';
-    if (hasOutput) {
-      btnHtml = '<button class="' + (d.on ? 'turn-off' : '') + '"' +
-        (pending ? ' disabled' : '') + '>' +
-        (d.on ? 'Turn off' : 'Turn on') + '</button>';
+      var row = document.createElement('div');
+      row.className = 'device';
+
+      var icon = document.createElement('div');
+      icon.className = 'dev-icon';
+      icon.textContent = categoryIcons[d.category] || '⚙';
+      row.appendChild(icon);
+
+      var info = document.createElement('div');
+      info.className = 'dev-info';
+
+      var nameDiv = document.createElement('div');
+      nameDiv.className = 'dev-name';
+      nameDiv.textContent = d.name;
+      info.appendChild(nameDiv);
+
+      var metaDiv = document.createElement('div');
+      metaDiv.className = 'dev-meta';
+      if (!hasOutput) {
+        metaDiv.innerHTML = '<span class="state-off">No relay</span>';
+      } else if (pending) {
+        metaDiv.innerHTML = '<span class="state-pending">Sending…</span>';
+      } else if (d.status === 'FAILED') {
+        metaDiv.innerHTML = '<span class="state-failed">Failed</span>';
+      } else {
+        metaDiv.innerHTML = d.on ? '<span class="state-on">ON</span>' : '<span class="state-off">OFF</span>';
+      }
+      info.appendChild(metaDiv);
+      row.appendChild(info);
+
+      var toggle = document.createElement('button');
+      if (!hasOutput) {
+        toggle.className = 'toggle no-relay';
+      } else {
+        toggle.className = 'toggle' + (d.on ? ' on' : '');
+        if (pending) toggle.disabled = true;
+        (function(id, on) {
+          toggle.onclick = function() { setDevice(id, on ? 'off' : 'on'); };
+        })(d.id, d.on);
+      }
+      row.appendChild(toggle);
+
+      section.appendChild(row);
     }
-
-    row.innerHTML =
-      '<div class="info">' +
-        '<div class="name"></div>' +
-        '<div class="meta">' + d.category + (d.zone_id ? ' · ' + d.zone_id : '') + '</div>' +
-        '<div class="' + stateClass + '">' + stateText + '</div>' +
-      '</div>' + btnHtml;
-
-    row.querySelector('.name').textContent = d.name;
-
-    if (hasOutput) {
-      (function(id, on) {
-        row.querySelector('button').onclick = function() {
-          setDevice(id, on ? 'off' : 'on');
-        };
-      })(d.id, d.on);
-    }
-    box.appendChild(row);
+    box.appendChild(section);
   }
 }
 
@@ -123,8 +208,10 @@ function refresh() {
       if (s.env_name) {
         document.getElementById('env-name').textContent = s.env_name;
       }
-      drawStats(s);
-      drawDevices(s.devices);
+      drawSensorHero(s);
+      drawStatusBar(s);
+      drawActiveRules(s);
+      drawDevices(s);
     })
     .catch(function() {
       document.getElementById('banner').style.display = 'block';

@@ -254,10 +254,30 @@ void handleState() {
     }
   }
 
+  // Zones
+  JsonArray zArr = doc["zones"].to<JsonArray>();
+  for (int i = 0; i < config.zoneCount; i++) {
+    JsonObject z = zArr.add<JsonObject>();
+    z["id"]   = config.zones[i].id;
+    z["name"] = config.zones[i].name;
+  }
+
   // Environment info
   if (config.env.configured) {
     doc["env_name"] = config.env.name;
     doc["env_type"] = config.env.type;
+  }
+
+  // Active automation rules
+  JsonArray rulesArr = doc["rules"].to<JsonArray>();
+  for (int i = 0; i < config.ruleCount; i++) {
+    AutomationRule &r = config.rules[i];
+    if (!r.enabled) continue;
+    JsonObject ro = rulesArr.add<JsonObject>();
+    ro["name"]      = r.name;
+    ro["equipment"] = r.equipmentId;
+    ro["triggered"] = r.triggered;
+    ro["enabled"]   = r.enabled;
   }
 
   String json;
