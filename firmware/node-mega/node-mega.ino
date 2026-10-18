@@ -14,6 +14,7 @@
 #include <SPI.h>
 #include <LoRa.h>
 #include <avr/wdt.h>
+#include <DHT.h>
 #include "protocol.h"
 
 // --- Relay pins ---
@@ -47,6 +48,13 @@ uint32_t lastPacketReceived = 0;
 bool failsafeActive = false;
 
 const int PIN_LED = 13;
+
+// --- DHT22 sensor ---
+const uint8_t PIN_DHT = 7;
+DHT dht(PIN_DHT, DHT22);
+float lastTempC = 0;
+float lastHumid = 0;
+bool  sensorOk  = false;
 
 // =====================================================================
 //  Relay control
@@ -133,11 +141,26 @@ void sendAck(uint8_t seq, uint8_t deviceIdx, bool actualOn, bool ok) {
 // =====================================================================
 //  Send telemetry
 // =====================================================================
+void readSensor() {
+  float t = dht.readTemperature();
+  float h = dht.readHumidity();
+  if (isnan(t) || isnan(h)) {
+    Serial.println("[DHT] read FAILED (NaN)");
+    return;
+  }
+  lastTempC = t;
+  lastHumid = h;
+  sensorOk  = true;
+  Serial.print("[DHT] temp="); Serial.print(t);
+  Serial.print(" hum="); Serial.println(h);
+}
+
 void sendTelemetry() {
-  int16_t tempX10 = 240 + (int16_t)(15.0 * sin(millis() / 20000.0));
+  readSensor();
 
   TelemetryPayload t;
-  t.temperatureX10 = tempX10;
+  t.temperatureX10 = (int16_t)(lastTempC * 10);
+  t.humidityX10    = (int16_t)(lastHumid * 10);
   t.relayStates    = relayStateBits();
 
   uint8_t buf[FRAME_MAX];
@@ -210,6 +233,10 @@ void setup() {
   }
   pinMode(PIN_LED, OUTPUT);
   Serial.println("Relays initialised (all OFF).");
+
+  dht.begin();
+  delay(2000);
+  Serial.println("DHT11 sensor on pin 7.");
 
   // LoRa radio — full hard reset to start clean
   hardResetRadio();

@@ -31,7 +31,7 @@ main { padding: 8px 16px 32px; max-width: 640px; margin: 0 auto; }
 
 /* Stats */
 .stats {
-  display: grid; grid-template-columns: repeat(3, 1fr);
+  display: grid; grid-template-columns: repeat(2, 1fr);
   gap: 10px; margin-bottom: 16px;
 }
 .stat {

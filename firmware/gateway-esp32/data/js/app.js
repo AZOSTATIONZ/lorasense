@@ -37,11 +37,13 @@ function formatUptime(sec) {
 function drawStats(s) {
   var box = document.getElementById('stats');
   var tempVal = s.temperature_c !== undefined ? parseFloat(s.temperature_c).toFixed(1) + ' °C' : '--';
+  var humVal = s.humidity_pct !== undefined ? parseFloat(s.humidity_pct).toFixed(1) + ' %' : '--';
   var nodeClass = s.node_online ? ' online' : ' offline';
   var nodeText = s.node_online ? 'Online' : 'Offline';
 
   box.innerHTML =
     '<div class="stat"><div class="label">Temperature</div><div class="value">' + tempVal + '</div></div>' +
+    '<div class="stat"><div class="label">Humidity</div><div class="value">' + humVal + '</div></div>' +
     '<div class="stat"><div class="label">Node</div><div class="value' + nodeClass + '">' + nodeText + '</div></div>' +
     '<div class="stat"><div class="label">Uptime</div><div class="value">' + formatUptime(s.uptime_s) + '</div></div>';
 }

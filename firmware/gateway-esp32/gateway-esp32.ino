@@ -60,6 +60,7 @@ uint32_t lastKeepalive = 0;
 
 // --- Telemetry from node ---
 float nodeTemperature = 0;
+float nodeHumidity    = 0;
 
 // =====================================================================
 //  LittleFS file server
@@ -149,6 +150,7 @@ void handleTelemetry(const uint8_t *buf, uint8_t len) {
   if (len < HEADER_SIZE + sizeof(TelemetryPayload) + CRC_SIZE) return;
   TelemetryPayload *t = (TelemetryPayload *)(buf + HEADER_SIZE);
   nodeTemperature = t->temperatureX10 / 10.0;
+  nodeHumidity    = t->humidityX10    / 10.0;
 
   for (int i = 0; i < MAX_OUTPUTS && i < 8; i++) {
     outputs[i].confirmedOn = (t->relayStates >> i) & 1;
@@ -157,6 +159,7 @@ void handleTelemetry(const uint8_t *buf, uint8_t len) {
   nodeOnline = true;
   lastNodeHeard = millis();
   Serial.print("[LoRa] Telemetry: temp="); Serial.print(nodeTemperature);
+  Serial.print(" hum="); Serial.print(nodeHumidity);
   Serial.print(" relays=0b"); Serial.println(t->relayStates, BIN);
 }
 
@@ -220,6 +223,7 @@ void handleState() {
   doc["clients"]      = WiFi.softAPgetStationNum();
   doc["node_online"]  = nodeOnline;
   doc["temperature_c"] = serialized(String(nodeTemperature, 1));
+  doc["humidity_pct"]  = serialized(String(nodeHumidity, 1));
   doc["rssi"]         = LoRa.packetRssi();
 
   // Build devices array from equipment registry + output states

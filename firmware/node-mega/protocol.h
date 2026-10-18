@@ -45,21 +45,22 @@ struct FrameHeader {
 };
 
 // --- CMD_SET payload: which device, what state ---
-struct CmdSetPayload {
+struct __attribute__((packed)) CmdSetPayload {
   uint8_t deviceIndex;  // 0 = relay 1, 1 = relay 2, etc.
   uint8_t requestedOn;  // 1 = on, 0 = off
 };
 
 // --- ACK payload: what the node actually did ---
-struct AckPayload {
+struct __attribute__((packed)) AckPayload {
   uint8_t deviceIndex;
   uint8_t actualOn;     // the REAL output state after the command
   uint8_t ok;           // 1 = success, 0 = rejected (bad index, interlock, etc.)
 };
 
 // --- Telemetry payload ---
-struct TelemetryPayload {
+struct __attribute__((packed)) TelemetryPayload {
   int16_t  temperatureX10;  // e.g. 245 = 24.5 °C
+  int16_t  humidityX10;     // e.g. 655 = 65.5 %RH
   uint8_t  relayStates;     // bit 0 = relay 0, bit 1 = relay 1, etc.
 };
 
