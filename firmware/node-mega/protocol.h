@@ -4,10 +4,11 @@
 //  This file defines the "language" the two boards speak over LoRa.
 //  Every message (frame) has the same shape:
 //
-//    [ dst | src | type | seq | payload ... | crc_hi | crc_lo ]
-//      1B    1B    1B     1B    0-56 bytes     1B       1B
+//    [ dst | src | ver | type | seq | payload ... | crc_hi | crc_lo ]
+//      1B    1B    1B    1B     1B    0-55 bytes     1B       1B
 //
 //  dst/src  = who it's for / who sent it (addresses)
+//  ver      = protocol version (must match on both sides)
 //  type     = what kind of message (command, ack, telemetry, etc.)
 //  seq      = sequence number so we can match an ACK to its command
 //  payload  = the actual data (device id + on/off, sensor readings, etc.)
@@ -19,27 +20,32 @@
 #pragma once
 #include <stdint.h>
 
+// --- Protocol version ---
+const uint8_t PROTOCOL_VERSION = 2;
+
 // --- Addresses ---
-// Each board has a unique address. 0xFF = broadcast (everyone listens).
 const uint8_t ADDR_GATEWAY = 0x01;
 const uint8_t ADDR_NODE1   = 0x02;
 const uint8_t ADDR_BROADCAST = 0xFF;
 
 // --- Message types ---
 enum MsgType : uint8_t {
-  MSG_CMD_SET   = 0x10,   // gateway -> node: "set device X to on/off"
-  MSG_ACK       = 0x20,   // node -> gateway: "done, here's the actual state"
-  MSG_TELEMETRY = 0x30,   // node -> gateway: sensor readings
-  MSG_HEARTBEAT = 0x40,   // node -> gateway: "I'm still alive"
-  MSG_KEEPALIVE = 0x50,   // gateway -> node: "I'm still here, don't fail-safe"
-  MSG_PING      = 0xE0,   // test
-  MSG_PONG      = 0xE1,   // test reply
+  MSG_CMD_SET      = 0x10,   // gateway -> node: "set device X to on/off"
+  MSG_ACK          = 0x20,   // node -> gateway: "done, here's the actual state"
+  MSG_TELEMETRY    = 0x30,   // node -> gateway: sensor readings
+  MSG_HEARTBEAT    = 0x40,   // node -> gateway: "I'm still alive"
+  MSG_KEEPALIVE    = 0x50,   // gateway -> node: "I'm still here, don't fail-safe"
+  MSG_CONFIG_PUSH  = 0x60,   // gateway -> node: push config (thresholds, etc.)
+  MSG_CONFIG_ACK   = 0x61,   // node -> gateway: config received OK
+  MSG_PING         = 0xE0,   // test
+  MSG_PONG         = 0xE1,   // test reply
 };
 
-// --- Frame header (4 bytes, always present) ---
-struct FrameHeader {
+// --- Frame header (5 bytes, always present) ---
+struct __attribute__((packed)) FrameHeader {
   uint8_t dst;    // destination address
   uint8_t src;    // source address
+  uint8_t ver;    // protocol version
   uint8_t type;   // MsgType
   uint8_t seq;    // sequence number (0-255, wraps)
 };
@@ -64,6 +70,13 @@ struct __attribute__((packed)) TelemetryPayload {
   uint8_t  relayStates;     // bit 0 = relay 0, bit 1 = relay 1, etc.
 };
 
+// --- Config push payload (gateway -> node) ---
+struct __attribute__((packed)) ConfigPushPayload {
+  uint8_t  configType;      // what config is being pushed (0x01 = relay count)
+  uint8_t  data[8];         // config data (meaning depends on configType)
+  uint8_t  dataLen;         // how many bytes of data[] are used
+};
+
 // --- Frame size limits ---
 const uint8_t FRAME_MAX = 64;
 const uint8_t HEADER_SIZE = sizeof(FrameHeader);
@@ -71,12 +84,6 @@ const uint8_t CRC_SIZE = 2;
 
 // =====================================================================
 //  CRC-16/CCITT-FALSE - detects bit errors in the radio link
-//
-//  How it works in plain English:
-//    Before sending, the transmitter runs this function over every byte
-//    of the frame and appends the 2-byte result. The receiver runs the
-//    same function and compares. If even one bit flipped in transit,
-//    the numbers won't match, and the receiver drops the frame.
 // =====================================================================
 inline uint16_t crc16(const uint8_t *data, uint16_t len) {
   uint16_t crc = 0xFFFF;
@@ -96,14 +103,15 @@ inline uint8_t buildFrame(uint8_t *buf, uint8_t dst, uint8_t src,
                           const void *payload, uint8_t payloadLen) {
   buf[0] = dst;
   buf[1] = src;
-  buf[2] = (uint8_t)type;
-  buf[3] = seq;
+  buf[2] = PROTOCOL_VERSION;
+  buf[3] = (uint8_t)type;
+  buf[4] = seq;
   if (payloadLen > 0 && payload != nullptr) {
     memcpy(buf + HEADER_SIZE, payload, payloadLen);
   }
   uint8_t bodyLen = HEADER_SIZE + payloadLen;
   uint16_t crc = crc16(buf, bodyLen);
-  buf[bodyLen]     = (crc >> 8) & 0xFF;   // high byte first
+  buf[bodyLen]     = (crc >> 8) & 0xFF;
   buf[bodyLen + 1] = crc & 0xFF;
   return bodyLen + CRC_SIZE;
 }

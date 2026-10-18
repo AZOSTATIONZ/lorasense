@@ -1,14 +1,6 @@
 // =====================================================================
 //  LoRaSense Gateway (ESP32)
-//  Phase 2: config persistence + dynamic equipment registry
-//
-//  What changed from Phase 1:
-//   - Equipment loaded from /config/equipment.json (user-editable)
-//   - Environment and zone config persisted in LittleFS
-//   - New API: /api/config, /api/config/environment, /api/config/zones,
-//     /api/config/equipment (CRUD)
-//   - Output state tracked per relay channel, not per device name
-//   - ArduinoJson for config serialization
+//  Phase 4: protocol v2, DHT11 telemetry, config persistence
 // =====================================================================
 
 #include <WiFi.h>
@@ -122,6 +114,7 @@ bool sendAndWaitAck(uint8_t outputIdx, bool requestedOn, uint8_t seq) {
 
       FrameHeader *hdr = (FrameHeader *)rxBuf;
       if (hdr->dst != ADDR_GATEWAY || hdr->src != ADDR_NODE1) continue;
+      if (hdr->ver != PROTOCOL_VERSION) continue;
 
       if (hdr->type == MSG_ACK && hdr->seq == seq) {
         AckPayload *ack = (AckPayload *)(rxBuf + HEADER_SIZE);
@@ -177,10 +170,21 @@ void checkIncoming() {
   FrameHeader *hdr = (FrameHeader *)buf;
   if (hdr->dst != ADDR_GATEWAY && hdr->dst != ADDR_BROADCAST) return;
 
+  if (hdr->ver != PROTOCOL_VERSION) {
+    Serial.print("[LoRa] version mismatch: got v");
+    Serial.print(hdr->ver);
+    Serial.print(" expected v");
+    Serial.println(PROTOCOL_VERSION);
+    return;
+  }
+
   if (hdr->type == MSG_TELEMETRY) handleTelemetry(buf, n);
   else if (hdr->type == MSG_HEARTBEAT) {
     nodeOnline = true; lastNodeHeard = millis();
     Serial.println("[LoRa] Heartbeat received");
+  }
+  else if (hdr->type == MSG_CONFIG_ACK) {
+    Serial.println("[LoRa] Config ACK received");
   }
 }
 
@@ -225,6 +229,7 @@ void handleState() {
   doc["temperature_c"] = serialized(String(nodeTemperature, 1));
   doc["humidity_pct"]  = serialized(String(nodeHumidity, 1));
   doc["rssi"]         = LoRa.packetRssi();
+  doc["protocol_ver"] = PROTOCOL_VERSION;
 
   // Build devices array from equipment registry + output states
   JsonArray devArr = doc["devices"].to<JsonArray>();

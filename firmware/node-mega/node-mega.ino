@@ -1,6 +1,6 @@
 // =====================================================================
 //  LoRa Local-First Control Platform - NODE (Arduino Mega 2560)
-//  Phase 4: receive commands, switch relays, ACK, send telemetry
+//  Phase 4: protocol v2, DHT11 sensor, relay control + ACK + telemetry
 //
 //  Radio reliability fixes:
 //   - Removed LoRa.receive() — let parsePacket() handle mode switching
@@ -187,6 +187,14 @@ void sendHeartbeat() {
 void handleIncoming(const uint8_t *buf, uint8_t len) {
   FrameHeader *hdr = (FrameHeader *)buf;
 
+  if (hdr->ver != PROTOCOL_VERSION) {
+    Serial.print("[LoRa] version mismatch: got v");
+    Serial.print(hdr->ver);
+    Serial.print(" expected v");
+    Serial.println(PROTOCOL_VERSION);
+    return;
+  }
+
   // Any valid message from the gateway resets the fail-safe timer
   if (hdr->src == ADDR_GATEWAY) {
     lastGatewayHeard = millis();
@@ -195,6 +203,11 @@ void handleIncoming(const uint8_t *buf, uint8_t len) {
 
   if (hdr->type == MSG_KEEPALIVE) {
     Serial.println("[LoRa] RX keepalive from gateway");
+    return;
+  }
+
+  if (hdr->type == MSG_CONFIG_PUSH) {
+    Serial.println("[LoRa] RX config push (not yet handled)");
     return;
   }
 
