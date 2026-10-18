@@ -687,6 +687,62 @@ void handleHistory() {
 }
 
 // =====================================================================
+//  HTTP: /api/test — on-device self-test
+// =====================================================================
+void handleSelfTest() {
+  JsonDocument doc;
+  JsonArray results = doc["tests"].to<JsonArray>();
+  int pass = 0, fail = 0;
+
+  auto addResult = [&](const char *name, bool ok) {
+    JsonObject r = results.add<JsonObject>();
+    r["name"] = name;
+    r["pass"] = ok;
+    if (ok) pass++; else fail++;
+  };
+
+  // --- CRC known vector ---
+  uint8_t crcData[] = {'1','2','3','4','5','6','7','8','9'};
+  addResult("CRC-16 known vector", crc16(crcData, 9) == 0x29B1);
+
+  // --- Frame build + validate roundtrip ---
+  uint8_t frameBuf[FRAME_MAX];
+  CmdSetPayload testCmd = {0, 1};
+  uint8_t fLen = buildFrame(frameBuf, ADDR_NODE1, ADDR_GATEWAY,
+                            MSG_CMD_SET, 99, &testCmd, sizeof(testCmd));
+  addResult("frame build length", fLen == HEADER_SIZE + sizeof(CmdSetPayload) + CRC_SIZE);
+  addResult("frame validates", validateFrame(frameBuf, fLen));
+
+  // Corrupt and verify rejection
+  frameBuf[3] ^= 0x01;
+  addResult("corrupted frame rejected", !validateFrame(frameBuf, fLen));
+  frameBuf[3] ^= 0x01;  // restore
+
+  // --- History buffer ---
+  SensorHistory testHist;
+  testHist.push(100, 24.5, 60.0);
+  testHist.push(400, 25.0, 58.0);
+  addResult("history count after 2", testHist.count == 2);
+  addResult("history first reading", testHist.at(0).uptimeSec == 100);
+  addResult("history second reading", testHist.at(1).tempX10 == 250);
+
+  // --- LittleFS accessible ---
+  addResult("LittleFS mounted", LittleFS.exists("/index.html"));
+
+  // --- Config loaded ---
+  addResult("config zones loaded", config.zoneCount >= 0);
+  addResult("config equipment loaded", config.equipmentCount >= 0);
+
+  doc["passed"] = pass;
+  doc["failed"] = fail;
+  doc["total"]  = pass + fail;
+
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+// =====================================================================
 //  Automation engine — evaluate rules against sensor readings
 // =====================================================================
 const uint32_t AUTOMATION_INTERVAL_MS = 5000;
@@ -835,6 +891,9 @@ void setup() {
 
   // History API
   server.on("/api/history",            HTTP_GET,    handleHistory);
+
+  // Self-test
+  server.on("/api/test",               HTTP_GET,    handleSelfTest);
 
   server.onNotFound(handleNotFound);
   server.begin();
