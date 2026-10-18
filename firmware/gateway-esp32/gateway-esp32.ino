@@ -1,6 +1,6 @@
 // =====================================================================
 //  LoRaSense Gateway (ESP32)
-//  Phase 4: protocol v2, DHT11 telemetry, config persistence
+//  Phase 5: automation engine + protocol v2, DHT11 telemetry, config persistence
 // =====================================================================
 
 #include <WiFi.h>
@@ -338,6 +338,21 @@ void handleGetConfig() {
 
   doc["max_outputs"] = MAX_OUTPUTS;
 
+  JsonArray rArr = doc["rules"].to<JsonArray>();
+  for (int i = 0; i < config.ruleCount; i++) {
+    AutomationRule &r = config.rules[i];
+    JsonObject ro = rArr.add<JsonObject>();
+    ro["id"]         = r.id;
+    ro["name"]       = r.name;
+    ro["sensor"]     = r.sensor;
+    ro["condition"]  = r.condition;
+    ro["threshold"]  = r.thresholdX10;
+    ro["hysteresis"] = r.hysteresisX10;
+    ro["equipment"]  = r.equipmentId;
+    ro["enabled"]    = r.enabled;
+    ro["triggered"]  = r.triggered;
+  }
+
   String json;
   serializeJson(doc, json);
   server.send(200, "application/json", json);
@@ -475,6 +490,169 @@ void handleDeleteEquipment() {
 }
 
 // =====================================================================
+//  HTTP: Rules API
+// =====================================================================
+void handleGetRules() {
+  JsonDocument doc;
+  JsonArray arr = doc.to<JsonArray>();
+  for (int i = 0; i < config.ruleCount; i++) {
+    AutomationRule &r = config.rules[i];
+    JsonObject obj = arr.add<JsonObject>();
+    obj["id"]         = r.id;
+    obj["name"]       = r.name;
+    obj["sensor"]     = r.sensor;
+    obj["condition"]  = r.condition;
+    obj["threshold"]  = r.thresholdX10;
+    obj["hysteresis"] = r.hysteresisX10;
+    obj["equipment"]  = r.equipmentId;
+    obj["enabled"]    = r.enabled;
+    obj["triggered"]  = r.triggered;
+  }
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+void handleAddRule() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) {
+    server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+    return;
+  }
+  const char *id   = doc["id"] | "";
+  const char *name = doc["name"] | "";
+  const char *eqId = doc["equipment"] | "";
+  if (!id[0] || !name[0] || !eqId[0]) {
+    server.send(400, "application/json", "{\"error\":\"need id, name, equipment\"}");
+    return;
+  }
+  if (!config.findEquipment(eqId)) {
+    server.send(404, "application/json", "{\"error\":\"equipment not found\"}");
+    return;
+  }
+  uint8_t sensor    = doc["sensor"] | 0;
+  uint8_t condition = doc["condition"] | 0;
+  int16_t threshold = doc["threshold"] | 0;
+  int16_t hyst      = doc["hysteresis"] | 0;
+  bool enabled      = doc["enabled"] | true;
+
+  if (!config.addRule(id, name, sensor, condition, threshold, hyst, eqId, enabled)) {
+    server.send(409, "application/json", "{\"error\":\"rule exists or limit reached\"}");
+    return;
+  }
+  server.send(201, "application/json", "{\"ok\":true}");
+}
+
+void handleUpdateRule() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) {
+    server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+    return;
+  }
+  const char *id   = doc["id"] | "";
+  const char *name = doc["name"] | "";
+  const char *eqId = doc["equipment"] | "";
+  if (!id[0]) {
+    server.send(400, "application/json", "{\"error\":\"need id\"}");
+    return;
+  }
+  if (eqId[0] && !config.findEquipment(eqId)) {
+    server.send(404, "application/json", "{\"error\":\"equipment not found\"}");
+    return;
+  }
+  uint8_t sensor    = doc["sensor"] | 0;
+  uint8_t condition = doc["condition"] | 0;
+  int16_t threshold = doc["threshold"] | 0;
+  int16_t hyst      = doc["hysteresis"] | 0;
+  bool enabled      = doc["enabled"] | true;
+
+  if (!config.updateRule(id, name, sensor, condition, threshold, hyst, eqId, enabled)) {
+    server.send(404, "application/json", "{\"error\":\"rule not found\"}");
+    return;
+  }
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+void handleDeleteRule() {
+  String id = server.arg("id");
+  if (!id.length()) {
+    server.send(400, "application/json", "{\"error\":\"need id\"}");
+    return;
+  }
+  if (!config.removeRule(id.c_str())) {
+    server.send(404, "application/json", "{\"error\":\"rule not found\"}");
+    return;
+  }
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// =====================================================================
+//  Automation engine — evaluate rules against sensor readings
+// =====================================================================
+const uint32_t AUTOMATION_INTERVAL_MS = 5000;
+uint32_t lastAutomation = 0;
+
+void evaluateRules() {
+  for (int i = 0; i < config.ruleCount; i++) {
+    AutomationRule &r = config.rules[i];
+    if (!r.enabled) continue;
+
+    Equipment *eq = config.findEquipment(r.equipmentId);
+    if (!eq || eq->outputIndex >= MAX_OUTPUTS) continue;
+
+    int16_t valueX10;
+    if (r.sensor == 0)      valueX10 = (int16_t)(nodeTemperature * 10);
+    else if (r.sensor == 1) valueX10 = (int16_t)(nodeHumidity * 10);
+    else continue;
+
+    bool shouldTrigger;
+    if (r.condition == 0) {
+      // "above": trigger when value > threshold, release when value < threshold - hysteresis
+      shouldTrigger = r.triggered
+        ? (valueX10 >= r.thresholdX10 - r.hysteresisX10)
+        : (valueX10 > r.thresholdX10);
+    } else {
+      // "below": trigger when value < threshold, release when value > threshold + hysteresis
+      shouldTrigger = r.triggered
+        ? (valueX10 <= r.thresholdX10 + r.hysteresisX10)
+        : (valueX10 < r.thresholdX10);
+    }
+
+    if (shouldTrigger && !r.triggered) {
+      r.triggered = true;
+      if (outputs[eq->outputIndex].status != CMD_PENDING) {
+        outputs[eq->outputIndex].requestedOn = true;
+        outputs[eq->outputIndex].status      = CMD_PENDING;
+        outputs[eq->outputIndex].sentAt      = millis();
+        outputs[eq->outputIndex].seq         = nextSeq++;
+        Serial.print("[Auto] Rule '"); Serial.print(r.name);
+        Serial.print("' TRIGGERED -> "); Serial.print(eq->name);
+        Serial.println(" ON");
+      }
+    } else if (!shouldTrigger && r.triggered) {
+      r.triggered = false;
+      if (outputs[eq->outputIndex].status != CMD_PENDING) {
+        outputs[eq->outputIndex].requestedOn = false;
+        outputs[eq->outputIndex].status      = CMD_PENDING;
+        outputs[eq->outputIndex].sentAt      = millis();
+        outputs[eq->outputIndex].seq         = nextSeq++;
+        Serial.print("[Auto] Rule '"); Serial.print(r.name);
+        Serial.print("' RELEASED -> "); Serial.print(eq->name);
+        Serial.println(" OFF");
+      }
+    }
+  }
+}
+
+// =====================================================================
 //  Catch-all: serve from LittleFS or 404
 // =====================================================================
 void handleNotFound() {
@@ -515,6 +693,7 @@ void setup() {
   Serial.print(" ("); Serial.print(config.env.type); Serial.println(")");
   Serial.print("Equipment: "); Serial.println(config.equipmentCount);
   Serial.print("Zones: "); Serial.println(config.zoneCount);
+  Serial.print("Rules: "); Serial.println(config.ruleCount);
 
   // Wi-Fi access point
   WiFi.mode(WIFI_AP);
@@ -548,6 +727,12 @@ void setup() {
   server.on("/api/config/equipment",    HTTP_PUT,    handleUpdateEquipment);
   server.on("/api/config/equipment",    HTTP_DELETE, handleDeleteEquipment);
 
+  // Rules API
+  server.on("/api/rules",              HTTP_GET,    handleGetRules);
+  server.on("/api/rules",              HTTP_POST,   handleAddRule);
+  server.on("/api/rules",              HTTP_PUT,    handleUpdateRule);
+  server.on("/api/rules",              HTTP_DELETE, handleDeleteRule);
+
   server.onNotFound(handleNotFound);
   server.begin();
   lastKeepalive = millis();
@@ -562,5 +747,10 @@ void loop() {
   if (millis() - lastKeepalive >= KEEPALIVE_INTERVAL_MS) {
     sendKeepalive();
     lastKeepalive = millis();
+  }
+
+  if (nodeOnline && millis() - lastAutomation >= AUTOMATION_INTERVAL_MS) {
+    evaluateRules();
+    lastAutomation = millis();
   }
 }

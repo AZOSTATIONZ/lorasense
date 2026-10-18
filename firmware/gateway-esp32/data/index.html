@@ -101,6 +101,46 @@
         <button class="btn-small" id="add-eq-btn">Add equipment</button>
       </div>
     </section>
+
+    <!-- Automation rules -->
+    <section class="settings-section">
+      <h3>Automation Rules</h3>
+      <div id="rules-list"></div>
+      <div class="add-rule-form" id="add-rule-form">
+        <h4>Add rule</h4>
+        <div class="form-row">
+          <label>Name</label>
+          <input type="text" id="rule-name" maxlength="31" placeholder="e.g. Fan on when hot">
+        </div>
+        <div class="form-row">
+          <label>Sensor</label>
+          <select id="rule-sensor">
+            <option value="0">Temperature</option>
+            <option value="1">Humidity</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Condition</label>
+          <select id="rule-condition">
+            <option value="0">Above</option>
+            <option value="1">Below</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Threshold</label>
+          <input type="number" id="rule-threshold" step="0.1" placeholder="30.0">
+        </div>
+        <div class="form-row">
+          <label>Hysteresis</label>
+          <input type="number" id="rule-hysteresis" step="0.1" value="2.0">
+        </div>
+        <div class="form-row">
+          <label>Equipment</label>
+          <select id="rule-equipment"></select>
+        </div>
+        <button class="btn-small" id="add-rule-btn">Add rule</button>
+      </div>
+    </section>
   </div>
 </main>
 

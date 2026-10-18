@@ -206,6 +206,9 @@ function renderSettings(cfg) {
     div.appendChild(delBtn);
     eqList.appendChild(div);
   }
+
+  // Rules
+  renderRules(cfg);
 }
 
 function escHtml(s) {
@@ -275,6 +278,130 @@ document.getElementById('add-eq-btn').onclick = function() {
 
 function deleteEquipment(id) {
   fetch('/api/config/equipment?id=' + encodeURIComponent(id), { method: 'DELETE' })
+    .then(function() { loadConfig(); });
+}
+
+// =====================================================================
+//  Automation Rules
+// =====================================================================
+function renderRules(cfg) {
+  var rules = cfg.rules || [];
+  var ruleList = document.getElementById('rules-list');
+  ruleList.innerHTML = '';
+
+  if (rules.length === 0) {
+    ruleList.innerHTML = '<div class="empty-hint">No automation rules yet.</div>';
+  }
+
+  var sensorNames = ['Temperature', 'Humidity'];
+  var condNames   = ['above', 'below'];
+  var unitNames   = ['°C', '%'];
+
+  for (var i = 0; i < rules.length; i++) {
+    var r = rules[i];
+    var div = document.createElement('div');
+    div.className = 'rule-item' + (r.triggered ? ' triggered' : '') + (!r.enabled ? ' disabled' : '');
+
+    var eqName = r.equipment;
+    for (var j = 0; j < cfg.equipment.length; j++) {
+      if (cfg.equipment[j].id === r.equipment) { eqName = cfg.equipment[j].name; break; }
+    }
+
+    var thresh = (r.threshold / 10).toFixed(1);
+    var hyst = (r.hysteresis / 10).toFixed(1);
+    var desc = sensorNames[r.sensor] + ' ' + condNames[r.condition] + ' ' +
+              thresh + unitNames[r.sensor] + ' (±' + hyst + ')';
+
+    div.innerHTML =
+      '<div class="rule-info">' +
+        '<div class="rule-name">' + escHtml(r.name) + (r.triggered ? ' <span class="rule-active">ACTIVE</span>' : '') + '</div>' +
+        '<div class="rule-desc">' + desc + ' → ' + escHtml(eqName) + '</div>' +
+      '</div>';
+
+    var toggleBtn = document.createElement('button');
+    toggleBtn.className = 'btn-small' + (r.enabled ? '' : ' btn-off');
+    toggleBtn.textContent = r.enabled ? 'Enabled' : 'Disabled';
+    (function(rule) {
+      toggleBtn.onclick = function() { toggleRule(rule); };
+    })(r);
+    div.appendChild(toggleBtn);
+
+    var delBtn = document.createElement('button');
+    delBtn.className = 'btn-danger';
+    delBtn.textContent = 'Remove';
+    (function(id) {
+      delBtn.onclick = function() { deleteRule(id); };
+    })(r.id);
+    div.appendChild(delBtn);
+
+    ruleList.appendChild(div);
+  }
+
+  // Populate equipment dropdown for the add-rule form
+  var ruleEq = document.getElementById('rule-equipment');
+  ruleEq.innerHTML = '';
+  for (var i = 0; i < cfg.equipment.length; i++) {
+    var eq = cfg.equipment[i];
+    if (eq.output === undefined || eq.output === null) continue;
+    var opt = document.createElement('option');
+    opt.value = eq.id;
+    opt.textContent = eq.name;
+    ruleEq.appendChild(opt);
+  }
+}
+
+document.getElementById('add-rule-btn').onclick = function() {
+  var name = document.getElementById('rule-name').value.trim();
+  if (!name) return;
+  var eqId = document.getElementById('rule-equipment').value;
+  if (!eqId) return;
+
+  var id = 'r_' + Date.now().toString(36);
+  var data = {
+    id: id,
+    name: name,
+    sensor: parseInt(document.getElementById('rule-sensor').value),
+    condition: parseInt(document.getElementById('rule-condition').value),
+    threshold: Math.round(parseFloat(document.getElementById('rule-threshold').value) * 10),
+    hysteresis: Math.round(parseFloat(document.getElementById('rule-hysteresis').value) * 10),
+    equipment: eqId,
+    enabled: true
+  };
+
+  fetch('/api/rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).then(function(res) { return res.json(); })
+    .then(function(r) {
+      if (r.ok) {
+        document.getElementById('rule-name').value = '';
+        document.getElementById('rule-threshold').value = '';
+        loadConfig();
+      }
+    });
+};
+
+function toggleRule(rule) {
+  var data = {
+    id: rule.id,
+    name: rule.name,
+    sensor: rule.sensor,
+    condition: rule.condition,
+    threshold: rule.threshold,
+    hysteresis: rule.hysteresis,
+    equipment: rule.equipment,
+    enabled: !rule.enabled
+  };
+  fetch('/api/rules', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).then(function() { loadConfig(); });
+}
+
+function deleteRule(id) {
+  fetch('/api/rules?id=' + encodeURIComponent(id), { method: 'DELETE' })
     .then(function() { loadConfig(); });
 }
 

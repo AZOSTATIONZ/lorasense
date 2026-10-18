@@ -6,6 +6,7 @@
 // Maximum limits for the config system
 const int MAX_EQUIPMENT = 8;
 const int MAX_ZONES     = 8;
+const int MAX_RULES     = 8;
 const int ID_LEN        = 16;
 const int NAME_LEN      = 32;
 
@@ -33,6 +34,19 @@ struct Equipment {
   bool    active;          // whether this record is in use
 };
 
+// --- Automation rule ---
+struct AutomationRule {
+  char    id[ID_LEN];
+  char    name[NAME_LEN];
+  uint8_t sensor;          // 0 = temperature, 1 = humidity
+  uint8_t condition;       // 0 = above, 1 = below
+  int16_t thresholdX10;    // e.g. 300 = 30.0°C
+  int16_t hysteresisX10;   // e.g. 30 = 3.0°C
+  char    equipmentId[ID_LEN];
+  bool    enabled;
+  bool    triggered;       // runtime state, not saved
+};
+
 // --- Config manager ---
 class ConfigManager {
 public:
@@ -41,17 +55,21 @@ public:
   int zoneCount;
   Equipment equipment[MAX_EQUIPMENT];
   int equipmentCount;
+  AutomationRule rules[MAX_RULES];
+  int ruleCount;
 
-  ConfigManager() : zoneCount(0), equipmentCount(0) {
+  ConfigManager() : zoneCount(0), equipmentCount(0), ruleCount(0) {
     memset(&env, 0, sizeof(env));
     memset(zones, 0, sizeof(zones));
     memset(equipment, 0, sizeof(equipment));
+    memset(rules, 0, sizeof(rules));
   }
 
   bool begin() {
     loadEnvironment();
     loadZones();
     loadEquipment();
+    loadRules();
     return true;
   }
 
@@ -252,6 +270,103 @@ public:
         for (int j = i; j < equipmentCount - 1; j++) equipment[j] = equipment[j + 1];
         equipmentCount--;
         return saveEquipment();
+      }
+    }
+    return false;
+  }
+
+  // --- Automation rules ---
+  void loadRules() {
+    ruleCount = 0;
+    File f = LittleFS.open("/config/rules.json", "r");
+    if (!f) return;
+    JsonDocument doc;
+    if (deserializeJson(doc, f) != DeserializationError::Ok) { f.close(); return; }
+    JsonArray arr = doc.as<JsonArray>();
+    for (JsonObject obj : arr) {
+      if (ruleCount >= MAX_RULES) break;
+      AutomationRule &r = rules[ruleCount];
+      strlcpy(r.id, obj["id"] | "", ID_LEN);
+      strlcpy(r.name, obj["name"] | "", NAME_LEN);
+      r.sensor        = obj["sensor"] | 0;
+      r.condition     = obj["condition"] | 0;
+      r.thresholdX10  = obj["threshold"] | 0;
+      r.hysteresisX10 = obj["hysteresis"] | 0;
+      strlcpy(r.equipmentId, obj["equipment"] | "", ID_LEN);
+      r.enabled       = obj["enabled"] | true;
+      r.triggered     = false;
+      ruleCount++;
+    }
+    f.close();
+  }
+
+  bool saveRules() {
+    LittleFS.mkdir("/config");
+    File f = LittleFS.open("/config/rules.json", "w");
+    if (!f) return false;
+    JsonDocument doc;
+    JsonArray arr = doc.to<JsonArray>();
+    for (int i = 0; i < ruleCount; i++) {
+      AutomationRule &r = rules[i];
+      JsonObject obj = arr.add<JsonObject>();
+      obj["id"]         = r.id;
+      obj["name"]       = r.name;
+      obj["sensor"]     = r.sensor;
+      obj["condition"]  = r.condition;
+      obj["threshold"]  = r.thresholdX10;
+      obj["hysteresis"] = r.hysteresisX10;
+      obj["equipment"]  = r.equipmentId;
+      obj["enabled"]    = r.enabled;
+    }
+    serializeJson(doc, f);
+    f.close();
+    return true;
+  }
+
+  AutomationRule *findRule(const char *id) {
+    for (int i = 0; i < ruleCount; i++)
+      if (strcmp(rules[i].id, id) == 0) return &rules[i];
+    return nullptr;
+  }
+
+  bool addRule(const char *id, const char *name, uint8_t sensor, uint8_t condition,
+               int16_t thresholdX10, int16_t hysteresisX10, const char *equipmentId, bool enabled) {
+    if (ruleCount >= MAX_RULES) return false;
+    if (findRule(id)) return false;
+    AutomationRule &r = rules[ruleCount];
+    strlcpy(r.id, id, ID_LEN);
+    strlcpy(r.name, name, NAME_LEN);
+    r.sensor        = sensor;
+    r.condition     = condition;
+    r.thresholdX10  = thresholdX10;
+    r.hysteresisX10 = hysteresisX10;
+    strlcpy(r.equipmentId, equipmentId, ID_LEN);
+    r.enabled       = enabled;
+    r.triggered     = false;
+    ruleCount++;
+    return saveRules();
+  }
+
+  bool updateRule(const char *id, const char *name, uint8_t sensor, uint8_t condition,
+                  int16_t thresholdX10, int16_t hysteresisX10, const char *equipmentId, bool enabled) {
+    AutomationRule *r = findRule(id);
+    if (!r) return false;
+    if (name[0]) strlcpy(r->name, name, NAME_LEN);
+    r->sensor        = sensor;
+    r->condition     = condition;
+    r->thresholdX10  = thresholdX10;
+    r->hysteresisX10 = hysteresisX10;
+    strlcpy(r->equipmentId, equipmentId, ID_LEN);
+    r->enabled       = enabled;
+    return saveRules();
+  }
+
+  bool removeRule(const char *id) {
+    for (int i = 0; i < ruleCount; i++) {
+      if (strcmp(rules[i].id, id) == 0) {
+        for (int j = i; j < ruleCount - 1; j++) rules[j] = rules[j + 1];
+        ruleCount--;
+        return saveRules();
       }
     }
     return false;
