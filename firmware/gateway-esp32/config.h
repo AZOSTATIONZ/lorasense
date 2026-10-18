@@ -5,6 +5,7 @@
 
 // Maximum limits for the config system
 const int MAX_EQUIPMENT = 8;
+const int MAX_SENSORS   = 8;
 const int MAX_ZONES     = 8;
 const int MAX_RULES     = 8;
 const int ID_LEN        = 16;
@@ -35,6 +36,18 @@ struct Equipment {
   bool    active;          // whether this record is in use
 };
 
+// --- Sensor instance — a configured sensor in this installation ---
+struct SensorInstance {
+  char    id[ID_LEN];
+  char    name[NAME_LEN];
+  uint8_t sensorType;      // SensorType enum value
+  char    nodeId[ID_LEN];  // controller node
+  uint8_t pin;             // assigned pin (0xFF = bus device, no pin)
+  char    zoneId[ID_LEN];
+  bool    enabled;
+  bool    active;          // whether this record slot is in use
+};
+
 // --- Automation rule ---
 struct AutomationRule {
   char    id[ID_LEN];
@@ -56,13 +69,16 @@ public:
   int zoneCount;
   Equipment equipment[MAX_EQUIPMENT];
   int equipmentCount;
+  SensorInstance sensors[MAX_SENSORS];
+  int sensorCount;
   AutomationRule rules[MAX_RULES];
   int ruleCount;
 
-  ConfigManager() : zoneCount(0), equipmentCount(0), ruleCount(0) {
+  ConfigManager() : zoneCount(0), equipmentCount(0), sensorCount(0), ruleCount(0) {
     memset(&env, 0, sizeof(env));
     memset(zones, 0, sizeof(zones));
     memset(equipment, 0, sizeof(equipment));
+    memset(sensors, 0, sizeof(sensors));
     memset(rules, 0, sizeof(rules));
   }
 
@@ -70,6 +86,7 @@ public:
     loadEnvironment();
     loadZones();
     loadEquipment();
+    loadSensors();
     loadRules();
     return true;
   }
@@ -275,6 +292,99 @@ public:
         for (int j = i; j < equipmentCount - 1; j++) equipment[j] = equipment[j + 1];
         equipmentCount--;
         return saveEquipment();
+      }
+    }
+    return false;
+  }
+
+  // --- Sensors ---
+  void loadSensors() {
+    sensorCount = 0;
+    File f = LittleFS.open("/config/sensors.json", "r");
+    if (!f) return;
+    JsonDocument doc;
+    if (deserializeJson(doc, f) != DeserializationError::Ok) { f.close(); return; }
+    JsonArray arr = doc.as<JsonArray>();
+    for (JsonObject obj : arr) {
+      if (sensorCount >= MAX_SENSORS) break;
+      SensorInstance &s = sensors[sensorCount];
+      strlcpy(s.id, obj["id"] | "", ID_LEN);
+      strlcpy(s.name, obj["name"] | "", NAME_LEN);
+      s.sensorType = obj["type"] | 0;
+      strlcpy(s.nodeId, obj["node_id"] | "mega-001", ID_LEN);
+      s.pin = obj["pin"] | 0xFF;
+      strlcpy(s.zoneId, obj["zone_id"] | "", ID_LEN);
+      s.enabled = obj["enabled"] | true;
+      s.active = true;
+      sensorCount++;
+    }
+    f.close();
+  }
+
+  bool saveSensors() {
+    LittleFS.mkdir("/config");
+    File f = LittleFS.open("/config/sensors.json", "w");
+    if (!f) return false;
+    JsonDocument doc;
+    JsonArray arr = doc.to<JsonArray>();
+    for (int i = 0; i < sensorCount; i++) {
+      SensorInstance &s = sensors[i];
+      if (!s.active) continue;
+      JsonObject obj = arr.add<JsonObject>();
+      obj["id"]      = s.id;
+      obj["name"]    = s.name;
+      obj["type"]    = s.sensorType;
+      obj["node_id"] = s.nodeId;
+      if (s.pin != 0xFF) obj["pin"] = s.pin;
+      obj["zone_id"] = s.zoneId;
+      obj["enabled"] = s.enabled;
+    }
+    serializeJson(doc, f);
+    f.close();
+    return true;
+  }
+
+  SensorInstance *findSensor(const char *id) {
+    for (int i = 0; i < sensorCount; i++)
+      if (sensors[i].active && strcmp(sensors[i].id, id) == 0)
+        return &sensors[i];
+    return nullptr;
+  }
+
+  bool isSensorPinTaken(uint8_t pin, const char *excludeId = nullptr) {
+    for (int i = 0; i < sensorCount; i++) {
+      if (!sensors[i].active) continue;
+      if (sensors[i].pin == pin) {
+        if (excludeId && strcmp(sensors[i].id, excludeId) == 0) continue;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool addSensor(const char *id, const char *name, uint8_t type,
+                 const char *nodeId, uint8_t pin, const char *zoneId, bool enabled) {
+    if (sensorCount >= MAX_SENSORS) return false;
+    if (findSensor(id)) return false;
+    SensorInstance &s = sensors[sensorCount];
+    strlcpy(s.id, id, ID_LEN);
+    strlcpy(s.name, name, NAME_LEN);
+    s.sensorType = type;
+    strlcpy(s.nodeId, nodeId, ID_LEN);
+    s.pin = pin;
+    strlcpy(s.zoneId, zoneId, ID_LEN);
+    s.enabled = enabled;
+    s.active = true;
+    sensorCount++;
+    return saveSensors();
+  }
+
+  bool removeSensor(const char *id) {
+    for (int i = 0; i < sensorCount; i++) {
+      if (sensors[i].active && strcmp(sensors[i].id, id) == 0) {
+        for (int j = i; j < sensorCount - 1; j++) sensors[j] = sensors[j + 1];
+        sensorCount--;
+        return saveSensors();
       }
     }
     return false;

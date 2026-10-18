@@ -892,6 +892,7 @@ function loadStudio() {
   loadNodes();
   loadRelays();
   loadPins();
+  loadSensors();
   loadDrivers();
 }
 
@@ -980,6 +981,110 @@ function loadDrivers() {
         '</span></div>';
     }).join('');
   });
+}
+
+function loadSensors() {
+  // Load configured sensors
+  fetch('/api/config/sensors').then(function(r){return r.json();}).then(function(sensors){
+    var el = document.getElementById('sensor-list');
+    if (!sensors.length) {
+      el.innerHTML = '<p style="color:var(--muted)">No sensors configured.</p>';
+    } else {
+      el.innerHTML = sensors.map(function(s){
+        var pinText = s.pin_name ? ' on ' + s.pin_name : '';
+        var statusBadge = s.supported
+          ? '<span class="driver-badge ok">Active</span>'
+          : '<span class="driver-badge na">Awaiting firmware</span>';
+        return '<div class="driver-card">' +
+          '<div class="driver-info"><h4>' + esc(s.name) + '</h4>' +
+          '<p>' + esc(s.driver || 'Unknown') + pinText + ' · ' + esc(s.node_id) + '</p></div>' +
+          '<div style="display:flex;gap:8px;align-items:center">' + statusBadge +
+          ' <button class="btn-danger" onclick="deleteSensor(\'' + s.id + '\')" style="font-size:12px;padding:4px 8px">Remove</button>' +
+          '</div></div>';
+      }).join('');
+    }
+  });
+
+  // Populate sensor type dropdown (supported only)
+  fetch('/api/hw/drivers').then(function(r){return r.json();}).then(function(drivers){
+    var sel = document.getElementById('sensor-type');
+    sel.innerHTML = '';
+    for (var i = 0; i < drivers.length; i++) {
+      var d = drivers[i];
+      var opt = document.createElement('option');
+      opt.value = d.type;
+      opt.textContent = d.name + (d.supported ? '' : ' (not yet supported)');
+      opt.disabled = !d.supported;
+      sel.appendChild(opt);
+    }
+    updateSensorPinOptions();
+  });
+
+  // Populate zone dropdown
+  if (configData && configData.zones) {
+    var zsel = document.getElementById('sensor-zone');
+    zsel.innerHTML = '<option value="">No zone</option>';
+    for (var i = 0; i < configData.zones.length; i++) {
+      var opt = document.createElement('option');
+      opt.value = configData.zones[i].id;
+      opt.textContent = configData.zones[i].name;
+      zsel.appendChild(opt);
+    }
+  }
+}
+
+function updateSensorPinOptions() {
+  if (!window._pinData) return;
+  var sel = document.getElementById('sensor-pin');
+  sel.innerHTML = '';
+  var pins = window._pinData;
+  for (var i = 0; i < pins.length; i++) {
+    var p = pins[i];
+    if (p.state !== 0) continue;
+    if (p.caps.indexOf('DI') < 0) continue;
+    var opt = document.createElement('option');
+    opt.value = p.pin;
+    opt.textContent = p.name + ' (' + p.caps + ')';
+    sel.appendChild(opt);
+  }
+}
+
+document.getElementById('sensor-type').onchange = updateSensorPinOptions;
+
+document.getElementById('add-sensor-btn').onclick = function() {
+  var name = document.getElementById('sensor-name').value.trim();
+  if (!name) return;
+  var id = 'sen_' + Date.now().toString(36);
+  var data = {
+    id: id,
+    name: name,
+    type: parseInt(document.getElementById('sensor-type').value),
+    node_id: 'mega-001',
+    pin: parseInt(document.getElementById('sensor-pin').value),
+    zone_id: document.getElementById('sensor-zone').value,
+    enabled: true
+  };
+  fetch('/api/config/sensors', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).then(function(res) { return res.json().then(function(j){ return {ok: res.ok, body: j}; }); })
+    .then(function(r) {
+      if (r.ok) {
+        document.getElementById('sensor-name').value = '';
+        loadStudio();
+      } else {
+        var el = document.getElementById('sensor-error');
+        el.textContent = r.body.error || 'Failed to add sensor';
+        el.style.display = '';
+        setTimeout(function() { el.style.display = 'none'; }, 5000);
+      }
+    });
+};
+
+function deleteSensor(id) {
+  fetch('/api/config/sensors?id=' + encodeURIComponent(id), { method: 'DELETE' })
+    .then(function() { loadStudio(); });
 }
 
 function esc(s) {

@@ -377,6 +377,26 @@ void handleGetConfig() {
 
   doc["max_outputs"] = MAX_OUTPUTS;
 
+  // Sensors
+  JsonArray sArr = doc["sensors"].to<JsonArray>();
+  for (int i = 0; i < config.sensorCount; i++) {
+    SensorInstance &s = config.sensors[i];
+    if (!s.active) continue;
+    JsonObject so = sArr.add<JsonObject>();
+    so["id"]      = s.id;
+    so["name"]    = s.name;
+    so["type"]    = s.sensorType;
+    so["node_id"] = s.nodeId;
+    if (s.pin != 0xFF) {
+      so["pin"] = s.pin;
+      char pn[6];
+      HardwareManager::pinName(s.pin, pn, sizeof(pn));
+      so["pin_name"] = String(pn);
+    }
+    so["zone_id"] = s.zoneId;
+    so["enabled"] = s.enabled;
+  }
+
   JsonArray rArr = doc["rules"].to<JsonArray>();
   for (int i = 0; i < config.ruleCount; i++) {
     AutomationRule &r = config.rules[i];
@@ -783,6 +803,137 @@ void handleSelfTest() {
 }
 
 // =====================================================================
+//  HTTP: Sensor API
+// =====================================================================
+void handleGetSensors() {
+  JsonDocument doc;
+  JsonArray arr = doc.to<JsonArray>();
+  for (int i = 0; i < config.sensorCount; i++) {
+    SensorInstance &s = config.sensors[i];
+    if (!s.active) continue;
+    JsonObject obj = arr.add<JsonObject>();
+    obj["id"]      = s.id;
+    obj["name"]    = s.name;
+    obj["type"]    = s.sensorType;
+    obj["node_id"] = s.nodeId;
+    if (s.pin != 0xFF) {
+      obj["pin"] = s.pin;
+      char pinBuf[6];
+      HardwareManager::pinName(s.pin, pinBuf, sizeof(pinBuf));
+      obj["pin_name"] = String(pinBuf);
+    }
+    obj["zone_id"] = s.zoneId;
+    obj["enabled"] = s.enabled;
+    // Find driver info
+    for (int d = 0; d < SENSOR_DRIVER_COUNT; d++) {
+      if (SENSOR_DRIVERS[d].type == s.sensorType) {
+        obj["driver"]    = SENSOR_DRIVERS[d].name;
+        obj["supported"] = SENSOR_DRIVERS[d].supported;
+        break;
+      }
+    }
+  }
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+void handleAddSensor() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) {
+    server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+    return;
+  }
+  const char *id     = doc["id"] | "";
+  const char *name   = doc["name"] | "";
+  uint8_t type       = doc["type"] | 0;
+  const char *nodeId = doc["node_id"] | "mega-001";
+  uint8_t pin        = doc["pin"] | 0xFF;
+  const char *zoneId = doc["zone_id"] | "";
+  bool enabled       = doc["enabled"] | true;
+
+  if (!id[0] || !name[0]) {
+    server.send(400, "application/json", "{\"error\":\"need id and name\"}");
+    return;
+  }
+  // Validate sensor type is known
+  bool typeFound = false;
+  bool typeSupported = false;
+  uint8_t pinReq = 0;
+  for (int d = 0; d < SENSOR_DRIVER_COUNT; d++) {
+    if (SENSOR_DRIVERS[d].type == type) {
+      typeFound = true;
+      typeSupported = SENSOR_DRIVERS[d].supported;
+      pinReq = SENSOR_DRIVERS[d].pinRequirement;
+      break;
+    }
+  }
+  if (!typeFound) {
+    server.send(400, "application/json", "{\"error\":\"unknown sensor type\"}");
+    return;
+  }
+  if (!typeSupported) {
+    server.send(400, "application/json", "{\"error\":\"sensor driver not yet supported by firmware\"}");
+    return;
+  }
+  // Validate node exists
+  if (nodeId[0] && !hw.findNode(nodeId)) {
+    server.send(400, "application/json", "{\"error\":\"controller node not found\"}");
+    return;
+  }
+  // Validate pin
+  if (pin != 0xFF) {
+    if (!hw.isPinAvailable(pin) && pin != MEGA_DHT_PIN) {
+      PinState ps; const char *ub;
+      hw.getPinState(pin, ps, ub);
+      String msg = "{\"error\":\"Pin ";
+      char pn[6]; HardwareManager::pinName(pin, pn, sizeof(pn));
+      msg += pn;
+      msg += " is reserved by ";
+      msg += ub;
+      msg += "\"}";
+      server.send(409, "application/json", msg);
+      return;
+    }
+    if (pinReq && !hw.pinHasCapability(pin, pinReq)) {
+      server.send(400, "application/json", "{\"error\":\"pin lacks required capability for this sensor\"}");
+      return;
+    }
+    if (config.isSensorPinTaken(pin)) {
+      server.send(409, "application/json", "{\"error\":\"pin already assigned to another sensor\"}");
+      return;
+    }
+  }
+  if (!config.addSensor(id, name, type, nodeId, pin, zoneId, enabled)) {
+    server.send(409, "application/json", "{\"error\":\"sensor exists or limit reached\"}");
+    return;
+  }
+  server.send(201, "application/json", "{\"ok\":true}");
+}
+
+void handleDeleteSensor() {
+  String id = server.arg("id");
+  if (!id.length()) {
+    server.send(400, "application/json", "{\"error\":\"need id\"}");
+    return;
+  }
+  if (!config.removeSensor(id.c_str())) {
+    server.send(404, "application/json", "{\"error\":\"not found\"}");
+    return;
+  }
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+void ensureDefaultSensor() {
+  if (config.sensorCount > 0) return;
+  config.addSensor("dht11-001", "Temperature & Humidity", 1, "mega-001", MEGA_DHT_PIN, "", true);
+}
+
+// =====================================================================
 //  HTTP: Hardware Studio API
 // =====================================================================
 void handleGetNodes() {
@@ -1031,8 +1182,10 @@ void setup() {
   // Hardware manager
   hw.begin();
   hw.ensureDefaultNode();
+  ensureDefaultSensor();
   syncRelayLabels();
   Serial.print("Nodes: "); Serial.println(hw.nodeCount);
+  Serial.print("Sensors: "); Serial.println(config.sensorCount);
 
   // Wi-Fi access point
   WiFi.mode(WIFI_AP);
@@ -1077,6 +1230,11 @@ void setup() {
 
   // History API
   server.on("/api/history",            HTTP_GET,    handleHistory);
+
+  // Sensor API
+  server.on("/api/config/sensors",     HTTP_GET,    handleGetSensors);
+  server.on("/api/config/sensors",     HTTP_POST,   handleAddSensor);
+  server.on("/api/config/sensors",     HTTP_DELETE, handleDeleteSensor);
 
   // Hardware Studio API
   server.on("/api/hw/nodes",           HTTP_GET,    handleGetNodes);

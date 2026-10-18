@@ -306,6 +306,33 @@
       </div>
     </section>
 
+    <!-- Configured sensors -->
+    <section class="settings-section" id="studio-sensors">
+      <h3>Configured Sensors</h3>
+      <div id="sensor-list"></div>
+      <div class="add-sensor-form" id="add-sensor-form">
+        <h4>Add Sensor</h4>
+        <div class="form-row">
+          <label>Type</label>
+          <select id="sensor-type"></select>
+        </div>
+        <div class="form-row">
+          <label>Name</label>
+          <input type="text" id="sensor-name" maxlength="31" placeholder="e.g. Room temperature">
+        </div>
+        <div class="form-row">
+          <label>Pin</label>
+          <select id="sensor-pin"></select>
+        </div>
+        <div class="form-row">
+          <label>Zone</label>
+          <select id="sensor-zone"></select>
+        </div>
+        <div id="sensor-error" class="form-error" style="display:none"></div>
+        <button class="btn-small" id="add-sensor-btn">Add sensor</button>
+      </div>
+    </section>
+
     <!-- Sensor drivers -->
     <section class="settings-section" id="studio-drivers">
       <h3>Sensor Drivers</h3>
