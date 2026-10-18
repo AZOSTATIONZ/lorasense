@@ -125,6 +125,21 @@
   <div id="view-dashboard">
     <div class="sensor-hero" id="sensor-hero"></div>
     <div class="status-bar" id="status-bar"></div>
+    <div class="chart-section" id="chart-section" style="display:none">
+      <div class="chart-header">
+        <h2 style="margin:0;font-size:15px">Sensor History</h2>
+        <div class="chart-range" id="chart-range">
+          <button class="range-btn active" data-range="60">1h</button>
+          <button class="range-btn" data-range="360">6h</button>
+          <button class="range-btn" data-range="1440">24h</button>
+        </div>
+      </div>
+      <canvas id="chart-canvas" width="600" height="200"></canvas>
+      <div class="chart-legend">
+        <span class="legend-item"><span class="legend-dot legend-temp"></span>Temperature</span>
+        <span class="legend-item"><span class="legend-dot legend-hum"></span>Humidity</span>
+      </div>
+    </div>
     <div id="active-rules"></div>
     <div id="devices"></div>
   </div>

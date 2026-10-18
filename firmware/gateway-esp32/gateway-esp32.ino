@@ -1,6 +1,6 @@
 // =====================================================================
 //  LoRaSense Gateway (ESP32)
-//  Phase 8: non-blocking command handler, automation engine, protocol v2
+//  Phase 9: sensor history + charts, non-blocking commands, automation, protocol v2
 // =====================================================================
 
 #include <WiFi.h>
@@ -12,10 +12,12 @@
 #include "secrets.h"
 #include "device.h"
 #include "config.h"
+#include "history.h"
 #include "../common/protocol.h"
 
 WebServer server(80);
 ConfigManager config;
+SensorHistory history;
 
 // --- LoRa pins ---
 const int PIN_SCK  = 18;
@@ -49,6 +51,11 @@ const uint32_t NODE_TIMEOUT_MS = 45000;
 // --- Keepalive ---
 const uint32_t KEEPALIVE_INTERVAL_MS = 20000;
 uint32_t lastKeepalive = 0;
+
+// --- Sensor history sampling ---
+const uint32_t HISTORY_INTERVAL_MS = 300000;  // 5 minutes
+uint32_t lastHistorySample = 0;
+bool firstSampleTaken = false;
 
 // --- Telemetry from node ---
 float nodeTemperature = 0;
@@ -660,6 +667,26 @@ void handleDeleteRule() {
 }
 
 // =====================================================================
+//  HTTP: /api/history — sensor reading history
+// =====================================================================
+void handleHistory() {
+  String json = "[";
+  for (int i = 0; i < history.count; i++) {
+    const SensorReading &r = history.at(i);
+    if (i > 0) json += ',';
+    json += "{\"t\":";
+    json += r.uptimeSec;
+    json += ",\"tc\":";
+    json += String(r.tempX10 / 10.0, 1);
+    json += ",\"h\":";
+    json += String(r.humX10 / 10.0, 1);
+    json += '}';
+  }
+  json += ']';
+  server.send(200, "application/json", json);
+}
+
+// =====================================================================
 //  Automation engine — evaluate rules against sensor readings
 // =====================================================================
 const uint32_t AUTOMATION_INTERVAL_MS = 5000;
@@ -806,6 +833,9 @@ void setup() {
   server.on("/api/rules",              HTTP_PUT,    handleUpdateRule);
   server.on("/api/rules",              HTTP_DELETE, handleDeleteRule);
 
+  // History API
+  server.on("/api/history",            HTTP_GET,    handleHistory);
+
   server.onNotFound(handleNotFound);
   server.begin();
   lastKeepalive = millis();
@@ -825,5 +855,17 @@ void loop() {
   if (nodeOnline && millis() - lastAutomation >= AUTOMATION_INTERVAL_MS) {
     evaluateRules();
     lastAutomation = millis();
+  }
+
+  // Sensor history: first sample on first telemetry, then every 5 min
+  if (nodeOnline) {
+    if (!firstSampleTaken) {
+      history.push(millis() / 1000, nodeTemperature, nodeHumidity);
+      lastHistorySample = millis();
+      firstSampleTaken = true;
+    } else if (millis() - lastHistorySample >= HISTORY_INTERVAL_MS) {
+      history.push(millis() / 1000, nodeTemperature, nodeHumidity);
+      lastHistorySample = millis();
+    }
   }
 }

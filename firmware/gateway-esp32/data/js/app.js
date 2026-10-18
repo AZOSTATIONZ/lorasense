@@ -2,6 +2,7 @@
 // Polls /api/state for dashboard, /api/config for settings
 
 var pollTimer = null;
+var historyTimer = null;
 var currentView = 'dashboard';
 var configData = null;
 
@@ -18,10 +19,13 @@ function showView(view) {
 
   if (view === 'settings') {
     clearInterval(pollTimer);
+    clearInterval(historyTimer);
     loadConfig();
   } else {
     refresh();
+    loadHistory();
     pollTimer = setInterval(refresh, 1000);
+    historyTimer = setInterval(loadHistory, 30000);
   }
 }
 
@@ -76,6 +80,147 @@ function drawStatusBar(s) {
     '<div class="status-item">\u{1F4F6} ' + rssiText + '</div>' +
     '<div class="status-item">⏱ ' + formatUptime(s.uptime_s) + '</div>';
 }
+
+// =====================================================================
+//  Chart — canvas-based sensor history
+// =====================================================================
+var chartRange = 60;  // minutes to show
+var chartData = [];
+
+function loadHistory() {
+  fetch('/api/history')
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      chartData = data;
+      drawChart();
+    });
+}
+
+function drawChart() {
+  var section = document.getElementById('chart-section');
+  if (chartData.length < 2) { section.style.display = 'none'; return; }
+  section.style.display = '';
+
+  var canvas = document.getElementById('chart-canvas');
+  var dpr = window.devicePixelRatio || 1;
+  var rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  var ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  var W = rect.width, H = rect.height;
+
+  // Filter to selected time range
+  var now = chartData[chartData.length - 1].t;
+  var cutoff = now - chartRange * 60;
+  var pts = [];
+  for (var i = 0; i < chartData.length; i++) {
+    if (chartData[i].t >= cutoff) pts.push(chartData[i]);
+  }
+  if (pts.length < 2) { section.style.display = 'none'; return; }
+
+  // Compute bounds
+  var tMin = pts[0].t, tMax = pts[pts.length - 1].t;
+  var tempMin = Infinity, tempMax = -Infinity;
+  var humMin = Infinity, humMax = -Infinity;
+  for (var i = 0; i < pts.length; i++) {
+    if (pts[i].tc < tempMin) tempMin = pts[i].tc;
+    if (pts[i].tc > tempMax) tempMax = pts[i].tc;
+    if (pts[i].h < humMin) humMin = pts[i].h;
+    if (pts[i].h > humMax) humMax = pts[i].h;
+  }
+  // Add padding to ranges
+  var tempPad = Math.max((tempMax - tempMin) * 0.1, 1);
+  var humPad = Math.max((humMax - humMin) * 0.1, 2);
+  tempMin -= tempPad; tempMax += tempPad;
+  humMin -= humPad; humMax += humPad;
+
+  var pad = { l: 36, r: 36, t: 8, b: 20 };
+  var cw = W - pad.l - pad.r;
+  var ch = H - pad.t - pad.b;
+
+  // Clear
+  ctx.clearRect(0, 0, W, H);
+
+  // Grid lines
+  var style = getComputedStyle(document.documentElement);
+  var gridColor = style.getPropertyValue('--border').trim() || '#e5e7eb';
+  var mutedColor = style.getPropertyValue('--muted').trim() || '#6b7280';
+  ctx.strokeStyle = gridColor;
+  ctx.lineWidth = 0.5;
+  for (var g = 0; g <= 4; g++) {
+    var gy = pad.t + ch * (g / 4);
+    ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(W - pad.r, gy); ctx.stroke();
+  }
+
+  // Y-axis labels (temp left, hum right)
+  ctx.font = '10px system-ui, sans-serif';
+  ctx.fillStyle = '#ef4444';
+  ctx.textAlign = 'right';
+  for (var g = 0; g <= 4; g++) {
+    var val = tempMax - (tempMax - tempMin) * (g / 4);
+    var gy = pad.t + ch * (g / 4);
+    ctx.fillText(val.toFixed(0) + '°', pad.l - 4, gy + 3);
+  }
+  ctx.fillStyle = '#3b82f6';
+  ctx.textAlign = 'left';
+  for (var g = 0; g <= 4; g++) {
+    var val = humMax - (humMax - humMin) * (g / 4);
+    var gy = pad.t + ch * (g / 4);
+    ctx.fillText(val.toFixed(0) + '%', W - pad.r + 4, gy + 3);
+  }
+
+  // X-axis time labels
+  ctx.fillStyle = mutedColor;
+  ctx.textAlign = 'center';
+  var span = tMax - tMin;
+  var steps = Math.min(4, pts.length - 1);
+  for (var g = 0; g <= steps; g++) {
+    var t = tMin + span * (g / steps);
+    var ago = Math.round((tMax - t) / 60);
+    var label = ago === 0 ? 'now' : ago + 'm ago';
+    var gx = pad.l + cw * (g / steps);
+    ctx.fillText(label, gx, H - 4);
+  }
+
+  function xPos(t) { return pad.l + cw * ((t - tMin) / (tMax - tMin)); }
+
+  // Draw temperature line
+  ctx.strokeStyle = '#ef4444';
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (var i = 0; i < pts.length; i++) {
+    var x = xPos(pts[i].t);
+    var y = pad.t + ch * (1 - (pts[i].tc - tempMin) / (tempMax - tempMin));
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Draw humidity line
+  ctx.strokeStyle = '#3b82f6';
+  ctx.beginPath();
+  for (var i = 0; i < pts.length; i++) {
+    var x = xPos(pts[i].t);
+    var y = pad.t + ch * (1 - (pts[i].h - humMin) / (humMax - humMin));
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+// Range button handlers
+document.getElementById('chart-range').onclick = function(e) {
+  var btn = e.target.closest('.range-btn');
+  if (!btn) return;
+  chartRange = parseInt(btn.getAttribute('data-range'));
+  var btns = document.querySelectorAll('.range-btn');
+  for (var i = 0; i < btns.length; i++) btns[i].className = 'range-btn';
+  btn.className = 'range-btn active';
+  drawChart();
+};
+
+// Resize redraw
+window.addEventListener('resize', drawChart);
 
 function drawActiveRules(s) {
   var box = document.getElementById('active-rules');
@@ -695,10 +840,14 @@ fetch('/api/state')
       showWizard();
     } else {
       refresh();
+      loadHistory();
       pollTimer = setInterval(refresh, 1000);
+      historyTimer = setInterval(loadHistory, 30000);
     }
   })
   .catch(function() {
     refresh();
+    loadHistory();
     pollTimer = setInterval(refresh, 1000);
+    historyTimer = setInterval(loadHistory, 30000);
   });
