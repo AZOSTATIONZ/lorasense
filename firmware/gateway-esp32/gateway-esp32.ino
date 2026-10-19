@@ -406,6 +406,11 @@ void handleState() {
     so["type"] = si.sensorType;
     so["connected"] = nodeOnline;
 
+    so["zone_id"] = si.zoneId;
+    so["pin"]     = si.pin;
+    if (lastTelemetryAt > 0)
+      so["reading_age_s"] = (int)(telemetryAge / 1000);
+
     const SensorDriver *drv = nullptr;
     for (int d = 0; d < SENSOR_DRIVER_COUNT; d++) {
       if (SENSOR_DRIVERS[d].type == si.sensorType) {
@@ -424,7 +429,7 @@ void handleState() {
       MeasureQuality tq = measureQuality(hasReading, telemetryAge, nodeTemperature,
                             drv ? drv->rangeMinX10 : -400, drv ? drv->rangeMaxX10 : 800);
       MeasureQuality hq = measureQuality(hasReading, telemetryAge, nodeHumidity, 0, 1000);
-      so["quality"] = qualityName(tq < hq ? hq : tq);  // worst of the two
+      so["quality"] = qualityName(tq < hq ? hq : tq);
       if (hasReading) {
         rd["temperature_c"] = serialized(String(calTemp, 1));
         rd["humidity_pct"]  = serialized(String(nodeHumidity, 1));

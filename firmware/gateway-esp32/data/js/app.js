@@ -69,6 +69,20 @@ var sensorMeta = {
   ]}
 };
 
+function formatAge(seconds) {
+  if (seconds === undefined || seconds === null) return '';
+  if (seconds < 60) return seconds + 's ago';
+  if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+  return Math.floor(seconds / 3600) + 'h ago';
+}
+
+function qualityBadge(q) {
+  if (!q || q === 'fresh') return '';
+  var cls = q === 'stale' ? 'q-stale' : q === 'invalid' ? 'q-invalid' : 'q-missing';
+  var label = q.charAt(0).toUpperCase() + q.slice(1);
+  return '<span class="quality-badge ' + cls + '">' + label + '</span>';
+}
+
 function drawSensorHero(s) {
   var box = document.getElementById('sensor-hero');
   var sensors = s.sensors;
@@ -84,38 +98,50 @@ function drawSensorHero(s) {
     var sen = sensors[i];
     var meta = sensorMeta[sen.type];
     if (!meta) {
-      html += '<div class="hero-card">' +
-        '<div class="hero-icon">📡</div>' +
+      html += '<div class="hero-card hero-error">' +
+        '<div class="hero-icon">\u{1F4E1}</div>' +
         '<div class="hero-value">--</div>' +
         '<div class="hero-label">' + escHtml(sen.name) + '</div>' +
-        '<div class="hero-sub">Unsupported driver</div>' +
+        '<div class="hero-sub disconnected">Unsupported type ' + sen.type + '</div>' +
       '</div>';
       continue;
     }
 
     var readings = meta.readings;
     var quality = sen.quality || 'missing';
-    var qClass = quality === 'fresh' ? '' : quality === 'stale' ? ' stale' : ' stale';
+    var qClass = quality === 'fresh' ? '' : ' stale';
     var sensorLabel = sen.label || sen.name;
+    var ageText = formatAge(sen.reading_age_s);
+
     for (var r = 0; r < readings.length; r++) {
       var rd = readings[r];
       var val = '--';
-      var sub = '';
+      var statusHtml = '';
+
       if (!sen.connected) {
-        sub = '<div class="hero-sub disconnected">Disconnected</div>';
+        statusHtml = '<div class="hero-sub disconnected">\u{26A0} Node offline</div>';
       } else if (quality === 'invalid') {
-        sub = '<div class="hero-sub disconnected">Invalid reading</div>';
-      } else if (quality === 'stale') {
-        sub = '<div class="hero-sub disconnected">Stale</div>';
+        statusHtml = '<div class="hero-sub disconnected">\u{26A0} Out of range</div>';
+      } else if (quality === 'missing') {
+        statusHtml = '<div class="hero-sub disconnected">Awaiting data</div>';
       }
+
       if (sen.readings && sen.readings[rd.key] !== undefined) {
         val = parseFloat(sen.readings[rd.key]).toFixed(rd.decimals);
       }
+
+      var unitLabel = rd.unit;
+      if (sen.unit && readings.length === 1) unitLabel = ' ' + sen.unit;
+
       html += '<div class="hero-card' + qClass + '">' +
-        '<div class="hero-icon">' + rd.icon + '</div>' +
-        '<div class="hero-value">' + val + '<span style="font-size:18px;font-weight:400">' + rd.unit + '</span></div>' +
+        '<div class="hero-top">' +
+          '<div class="hero-icon">' + rd.icon + '</div>' +
+          qualityBadge(quality) +
+        '</div>' +
+        '<div class="hero-value">' + val + '<span class="hero-unit">' + escHtml(unitLabel) + '</span></div>' +
         '<div class="hero-label">' + escHtml(sensorLabel) + ' — ' + rd.label + '</div>' +
-        sub +
+        (ageText ? '<div class="hero-age">' + ageText + '</div>' : '') +
+        statusHtml +
       '</div>';
     }
   }
@@ -131,10 +157,18 @@ function drawStatusBar(s) {
   var syncText = s.config_synced ? 'Synced' : 'Pending';
   var syncClass = s.config_synced ? 'sync-ok' : 'sync-pending';
 
+  var ageItem = '';
+  if (s.reading_age_s !== undefined) {
+    var ageStr = formatAge(s.reading_age_s);
+    var ageCls = s.reading_age_s > 600 ? ' age-stale' : '';
+    ageItem = '<div class="status-item' + ageCls + '">\u{1F4E1} ' + ageStr + '</div>';
+  }
+
   bar.innerHTML =
     '<div class="status-item"><span class="status-dot ' + dotClass + '"></span>' + nodeText + '</div>' +
     '<div class="spacer"></div>' +
     '<div class="status-item"><span class="' + syncClass + '">' + syncText + '</span></div>' +
+    ageItem +
     '<div class="status-item">\u{1F4F6} ' + rssiText + '</div>' +
     '<div class="status-item">⏱ ' + formatUptime(s.uptime_s) + '</div>';
 }
@@ -1127,6 +1161,11 @@ document.getElementById('wiz-go-dashboard').onclick = function() {
 // =====================================================================
 //  Start — check if onboarding needed
 // =====================================================================
+// Show loading skeleton while first fetch runs
+document.getElementById('sensor-hero').innerHTML =
+  '<div class="hero-card skeleton"><div class="hero-value">--</div><div class="hero-label">Loading…</div></div>' +
+  '<div class="hero-card skeleton"><div class="hero-value">--</div><div class="hero-label">Loading…</div></div>';
+
 fetch('/api/state')
   .then(function(res) { return res.json(); })
   .then(function(s) {
