@@ -55,22 +55,60 @@ function signalLabel(rssi) {
   return 'No signal';
 }
 
+var sensorMeta = {
+  1: { name: 'DHT11', readings: [
+    { key: 'temperature_c', label: 'Temperature', unit: ' °C', icon: '\u{1F321}', decimals: 1 },
+    { key: 'humidity_pct',  label: 'Humidity',    unit: ' %',  icon: '\u{1F4A7}', decimals: 0 }
+  ]},
+  2: { name: 'DHT22', readings: [
+    { key: 'temperature_c', label: 'Temperature', unit: ' °C', icon: '\u{1F321}', decimals: 1 },
+    { key: 'humidity_pct',  label: 'Humidity',    unit: ' %',  icon: '\u{1F4A7}', decimals: 0 }
+  ]}
+};
+
 function drawSensorHero(s) {
   var box = document.getElementById('sensor-hero');
-  var tempVal = s.temperature_c !== undefined ? parseFloat(s.temperature_c).toFixed(1) : '--';
-  var humVal = s.humidity_pct !== undefined ? parseFloat(s.humidity_pct).toFixed(0) : '--';
+  var sensors = s.sensors;
 
-  box.innerHTML =
-    '<div class="hero-card">' +
-      '<div class="hero-icon">\u{1F321}</div>' +
-      '<div class="hero-value">' + tempVal + '<span style="font-size:18px;font-weight:400"> °C</span></div>' +
-      '<div class="hero-label">Temperature</div>' +
-    '</div>' +
-    '<div class="hero-card">' +
-      '<div class="hero-icon">\u{1F4A7}</div>' +
-      '<div class="hero-value">' + humVal + '<span style="font-size:18px;font-weight:400"> %</span></div>' +
-      '<div class="hero-label">Humidity</div>' +
-    '</div>';
+  if (!sensors || sensors.length === 0) {
+    box.innerHTML = '<div class="empty-state">No sensors configured.<br>' +
+      '<a href="#" onclick="showView(\'studio\');return false;">Add a sensor in Hardware Studio</a></div>';
+    return;
+  }
+
+  var html = '';
+  for (var i = 0; i < sensors.length; i++) {
+    var sen = sensors[i];
+    var meta = sensorMeta[sen.type];
+    if (!meta) {
+      html += '<div class="hero-card">' +
+        '<div class="hero-icon">📡</div>' +
+        '<div class="hero-value">--</div>' +
+        '<div class="hero-label">' + escHtml(sen.name) + '</div>' +
+        '<div class="hero-sub">Unsupported driver</div>' +
+      '</div>';
+      continue;
+    }
+
+    var readings = meta.readings;
+    for (var r = 0; r < readings.length; r++) {
+      var rd = readings[r];
+      var val = '--';
+      var sub = '';
+      if (!sen.connected) {
+        sub = '<div class="hero-sub disconnected">Disconnected</div>';
+      } else if (sen.readings && sen.readings[rd.key] !== undefined) {
+        val = parseFloat(sen.readings[rd.key]).toFixed(rd.decimals);
+      }
+      html += '<div class="hero-card' + (!sen.connected ? ' stale' : '') + '">' +
+        '<div class="hero-icon">' + rd.icon + '</div>' +
+        '<div class="hero-value">' + val + '<span style="font-size:18px;font-weight:400">' + rd.unit + '</span></div>' +
+        '<div class="hero-label">' + rd.label + '</div>' +
+        sub +
+      '</div>';
+    }
+  }
+  box.innerHTML = html;
 }
 
 function drawStatusBar(s) {
@@ -92,7 +130,13 @@ function drawStatusBar(s) {
 var chartRange = 60;  // minutes to show
 var chartData = [];
 
+var hasSensors = true;
+
 function loadHistory() {
+  if (!hasSensors) {
+    document.getElementById('chart-section').style.display = 'none';
+    return;
+  }
   fetch('/api/history')
     .then(function(res) { return res.json(); })
     .then(function(data) {
@@ -252,7 +296,8 @@ function drawDevices(s) {
   var devices = s.devices;
   var box = document.getElementById('devices');
   if (!devices || devices.length === 0) {
-    box.innerHTML = '<div class="empty-state">No equipment configured.<br>Tap ⚙ to add equipment.</div>';
+    box.innerHTML = '<div class="empty-state">No equipment configured.<br>' +
+      '<a href="#" onclick="showView(\'settings\');return false;">Add equipment in Settings</a></div>';
     return;
   }
 
@@ -358,6 +403,7 @@ function refresh() {
       if (s.env_name) {
         document.getElementById('env-name').textContent = s.env_name;
       }
+      hasSensors = s.sensors && s.sensors.length > 0;
       drawSensorHero(s);
       drawStatusBar(s);
       drawActiveRules(s);

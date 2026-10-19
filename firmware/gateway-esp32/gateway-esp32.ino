@@ -276,6 +276,31 @@ void handleState() {
     doc["env_type"] = config.env.type;
   }
 
+  // Configured sensors with live readings
+  JsonArray sensArr = doc["sensors"].to<JsonArray>();
+  for (int i = 0; i < config.sensorCount; i++) {
+    SensorInstance &si = config.sensors[i];
+    if (!si.active || !si.enabled) continue;
+    JsonObject so = sensArr.add<JsonObject>();
+    so["id"]   = si.id;
+    so["name"] = si.name;
+    so["type"] = si.sensorType;
+    so["connected"] = nodeOnline;
+    for (int d = 0; d < SENSOR_DRIVER_COUNT; d++) {
+      if (SENSOR_DRIVERS[d].type == si.sensorType) {
+        so["driver"] = SENSOR_DRIVERS[d].name;
+        break;
+      }
+    }
+    if (si.sensorType == STYPE_DHT11 || si.sensorType == STYPE_DHT22) {
+      JsonObject rd = so["readings"].to<JsonObject>();
+      if (nodeOnline) {
+        rd["temperature_c"] = serialized(String(nodeTemperature, 1));
+        rd["humidity_pct"]  = serialized(String(nodeHumidity, 1));
+      }
+    }
+  }
+
   // Active automation rules
   JsonArray rulesArr = doc["rules"].to<JsonArray>();
   for (int i = 0; i < config.ruleCount; i++) {
