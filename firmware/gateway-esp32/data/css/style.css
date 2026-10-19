@@ -605,3 +605,84 @@ button:disabled { opacity: 0.5; cursor: wait; }
 .stat-trend.trend-up { color: var(--fail); }
 .stat-trend.trend-down { color: #3b82f6; }
 .stat-trend.trend-stable { color: var(--muted); }
+
+/* Phase 12: View transitions */
+#view-dashboard, #view-settings, #view-studio, #view-wizard {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.view-enter { opacity: 0; transform: translateY(12px); }
+.view-active { opacity: 1; transform: translateY(0); }
+
+/* Phase 12: Pull-to-refresh */
+.pull-indicator {
+  display: flex; justify-content: center; align-items: center;
+  height: 0; overflow: hidden; transition: height 0.2s ease;
+  color: var(--accent);
+}
+.pull-indicator.pulling { height: 48px; }
+.pull-indicator.refreshing { height: 48px; }
+.pull-spinner {
+  width: 24px; height: 24px;
+  transition: transform 0.3s ease;
+}
+.pull-indicator.refreshing .pull-spinner {
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Phase 12: Reconnect overlay */
+.reconnect-overlay {
+  display: none; position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);
+  justify-content: center; align-items: center;
+}
+.reconnect-overlay.active { display: flex; }
+.reconnect-card {
+  background: var(--card); border-radius: var(--radius);
+  padding: 32px 28px; text-align: center; width: 280px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  animation: reconnect-in 0.3s ease;
+}
+@keyframes reconnect-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+.reconnect-icon {
+  width: 48px; height: 48px; color: var(--muted);
+  margin-bottom: 12px; opacity: 0.6;
+}
+.reconnect-title {
+  font-size: 17px; font-weight: 700; margin-bottom: 4px;
+}
+.reconnect-sub {
+  font-size: 13px; color: var(--muted); margin-bottom: 16px;
+}
+.reconnect-bar {
+  height: 4px; background: var(--border); border-radius: 2px;
+  overflow: hidden; margin-bottom: 16px;
+}
+.reconnect-progress {
+  height: 100%; background: var(--accent); border-radius: 2px;
+  width: 100%; transition: width 1s linear;
+}
+
+/* Phase 12: Toggle tap feedback */
+.toggle { transition: background 0.2s, transform 0.1s; }
+.toggle:active:not(:disabled):not(.no-relay) { transform: scale(0.92); }
+.toggle::after { transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+
+.btn-small, .btn-primary {
+  transition: background 0.15s, transform 0.1s;
+}
+.btn-small:active, .btn-primary:active {
+  transform: scale(0.96);
+}
+
+/* Phase 12: Smooth card entrance */
+.hero-card {
+  transition: border-color 0.3s, box-shadow 0.3s, opacity 0.3s;
+}
+.device {
+  transition: background 0.2s, transform 0.1s;
+}
+.device:active { transform: scale(0.985); }

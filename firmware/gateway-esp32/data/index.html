@@ -2,8 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#2563eb">
 <title>LoRaSense</title>
+<link rel="manifest" href="/manifest.json">
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -17,7 +21,19 @@
   </div>
 </header>
 <main>
+  <div class="pull-indicator" id="pull-indicator">
+    <svg class="pull-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v6m0 0l-3-3m3 3l3-3"/><circle cx="12" cy="12" r="10" opacity="0.3"/></svg>
+  </div>
   <div class="banner" id="banner">Lost connection to the gateway. Retrying&hellip;</div>
+  <div class="reconnect-overlay" id="reconnect-overlay">
+    <div class="reconnect-card">
+      <svg class="reconnect-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+      <div class="reconnect-title">Connection lost</div>
+      <div class="reconnect-sub" id="reconnect-sub">Reconnecting in <span id="reconnect-countdown">5</span>s</div>
+      <div class="reconnect-bar"><div class="reconnect-progress" id="reconnect-progress"></div></div>
+      <button class="btn-small" id="reconnect-now-btn">Retry now</button>
+    </div>
+  </div>
 
   <!-- Onboarding wizard (7 steps) -->
   <div id="view-wizard" style="display:none">

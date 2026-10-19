@@ -159,10 +159,22 @@ document.getElementById('settings-btn').onclick = function() { showView('setting
 document.getElementById('back-btn').onclick = function() { showView('dashboard'); };
 
 function showView(view) {
+  var prevView = currentView;
   currentView = view;
-  document.getElementById('view-dashboard').style.display = view === 'dashboard' ? '' : 'none';
-  document.getElementById('view-settings').style.display = view === 'settings' ? '' : 'none';
-  document.getElementById('view-studio').style.display = view === 'studio' ? '' : 'none';
+  var views = ['dashboard', 'settings', 'studio'];
+  for (var v = 0; v < views.length; v++) {
+    var el = document.getElementById('view-' + views[v]);
+    if (views[v] === view) {
+      el.style.display = '';
+      el.classList.add('view-enter');
+      el.offsetHeight; // force reflow
+      el.classList.remove('view-enter');
+      el.classList.add('view-active');
+    } else {
+      el.classList.remove('view-active');
+      el.style.display = 'none';
+    }
+  }
 
   if (view === 'settings') {
     clearInterval(pollTimer);
@@ -763,11 +775,66 @@ function setDevice(id, state) {
   }).then(function() { refresh(); });
 }
 
+// =====================================================================
+//  Phase 12: Connection resilience
+// =====================================================================
+var failCount = 0;
+var reconnectTimer = null;
+var reconnectCountdown = 0;
+var RECONNECT_DELAYS = [3, 5, 10, 15, 30];
+
+function getReconnectDelay() {
+  var idx = Math.min(failCount - 1, RECONNECT_DELAYS.length - 1);
+  return RECONNECT_DELAYS[Math.max(0, idx)];
+}
+
+function showReconnectOverlay() {
+  var overlay = document.getElementById('reconnect-overlay');
+  overlay.classList.add('active');
+  startReconnectCountdown();
+}
+
+function hideReconnectOverlay() {
+  var overlay = document.getElementById('reconnect-overlay');
+  overlay.classList.remove('active');
+  clearInterval(reconnectTimer);
+}
+
+function startReconnectCountdown() {
+  clearInterval(reconnectTimer);
+  reconnectCountdown = getReconnectDelay();
+  var cdEl = document.getElementById('reconnect-countdown');
+  var bar = document.getElementById('reconnect-progress');
+  var total = reconnectCountdown;
+  cdEl.textContent = reconnectCountdown;
+  bar.style.transition = 'none';
+  bar.style.width = '100%';
+  bar.offsetHeight;
+  bar.style.transition = 'width 1s linear';
+
+  reconnectTimer = setInterval(function() {
+    reconnectCountdown--;
+    cdEl.textContent = Math.max(0, reconnectCountdown);
+    bar.style.width = Math.max(0, (reconnectCountdown / total) * 100) + '%';
+    if (reconnectCountdown <= 0) {
+      clearInterval(reconnectTimer);
+      refresh();
+    }
+  }, 1000);
+}
+
+document.getElementById('reconnect-now-btn').onclick = function() {
+  clearInterval(reconnectTimer);
+  refresh();
+};
+
 function refresh() {
   fetch('/api/state')
     .then(function(res) { return res.json(); })
     .then(function(s) {
+      failCount = 0;
       document.getElementById('banner').style.display = 'none';
+      hideReconnectOverlay();
       if (s.env_name) {
         document.getElementById('env-name').textContent = s.env_name;
       }
@@ -783,7 +850,12 @@ function refresh() {
       drawDevices(s);
     })
     .catch(function() {
+      failCount++;
       document.getElementById('banner').style.display = 'block';
+      if (failCount >= 3 && currentView === 'dashboard') {
+        clearInterval(pollTimer);
+        showReconnectOverlay();
+      }
     });
 }
 
@@ -2061,3 +2133,47 @@ document.getElementById('save-auth-btn').onclick = function() {
     if (d.ok) loadSystemInfo();
   });
 };
+
+// =====================================================================
+//  Phase 12: Pull-to-refresh gesture
+// =====================================================================
+(function() {
+  var pullEl = document.getElementById('pull-indicator');
+  var startY = 0;
+  var pulling = false;
+  var threshold = 60;
+
+  document.addEventListener('touchstart', function(e) {
+    if (currentView !== 'dashboard') return;
+    if (window.scrollY > 5) return;
+    startY = e.touches[0].clientY;
+    pulling = true;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function(e) {
+    if (!pulling) return;
+    var dy = e.touches[0].clientY - startY;
+    if (dy > 0 && dy < 120) {
+      pullEl.classList.add('pulling');
+      var pct = Math.min(dy / threshold, 1);
+      pullEl.querySelector('.pull-spinner').style.transform = 'rotate(' + (pct * 180) + 'deg)';
+    } else {
+      pullEl.classList.remove('pulling');
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchend', function() {
+    if (!pulling) return;
+    pulling = false;
+    var wasPulling = pullEl.classList.contains('pulling');
+    if (wasPulling) {
+      pullEl.classList.remove('pulling');
+      pullEl.classList.add('refreshing');
+      refresh();
+      loadHistory();
+      setTimeout(function() {
+        pullEl.classList.remove('refreshing');
+      }, 800);
+    }
+  }, { passive: true });
+})();
