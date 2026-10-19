@@ -6,6 +6,44 @@ var historyTimer = null;
 var currentView = 'dashboard';
 var configData = null;
 
+// Theme mapping: environment type -> CSS theme class
+var THEME_MAP = {
+  home: '', farm: '', greenhouse: '',
+  industrial: 'theme-industrial',
+  lab: 'theme-technical', custom: 'theme-technical'
+};
+var currentTheme = '';
+var themeOverride = '';
+try { themeOverride = localStorage.getItem('ls_theme') || ''; } catch(e) {}
+
+function applyTheme(envType) {
+  var cls;
+  if (themeOverride === 'friendly') cls = '';
+  else if (themeOverride === 'industrial') cls = 'theme-industrial';
+  else if (themeOverride === 'technical') cls = 'theme-technical';
+  else cls = THEME_MAP[envType] || '';
+  if (cls === currentTheme) return;
+  document.body.classList.remove('theme-industrial', 'theme-technical');
+  if (cls) document.body.classList.add(cls);
+  currentTheme = cls;
+}
+
+function setThemeOverride(val) {
+  themeOverride = val;
+  try { if (val) localStorage.setItem('ls_theme', val); else localStorage.removeItem('ls_theme'); } catch(e) {}
+}
+
+// Profile terminology per environment type
+var PROFILE_TERMS = {
+  home:       { zone: 'Room', zones: 'Rooms', sensor: 'Sensor', equipment: 'Device' },
+  farm:       { zone: 'Field', zones: 'Fields', sensor: 'Sensor', equipment: 'Equipment' },
+  greenhouse: { zone: 'Bay', zones: 'Bays', sensor: 'Sensor', equipment: 'Equipment' },
+  industrial: { zone: 'Area', zones: 'Areas', sensor: 'Instrument', equipment: 'Asset' },
+  lab:        { zone: 'Station', zones: 'Stations', sensor: 'Instrument', equipment: 'Apparatus' },
+  custom:     { zone: 'Zone', zones: 'Zones', sensor: 'Sensor', equipment: 'Equipment' }
+};
+var terms = PROFILE_TERMS.home;
+
 // =====================================================================
 //  Navigation
 // =====================================================================
@@ -89,8 +127,8 @@ function drawSensorHero(s) {
   var sensors = s.sensors;
 
   if (!sensors || sensors.length === 0) {
-    box.innerHTML = '<div class="empty-state">No sensors configured.<br>' +
-      '<a href="#" onclick="showView(\'studio\');return false;">Add a sensor in Hardware Studio</a></div>';
+    box.innerHTML = '<div class="empty-state">No ' + terms.sensor.toLowerCase() + 's configured.<br>' +
+      '<a href="#" onclick="showView(\'studio\');return false;">Add a ' + terms.sensor.toLowerCase() + ' in Hardware Studio</a></div>';
     return;
   }
 
@@ -346,8 +384,8 @@ function drawDevices(s) {
   var devices = s.devices;
   var box = document.getElementById('devices');
   if (!devices || devices.length === 0) {
-    box.innerHTML = '<div class="empty-state">No equipment configured.<br>' +
-      '<a href="#" onclick="showView(\'settings\');return false;">Add equipment in Settings</a></div>';
+    box.innerHTML = '<div class="empty-state">No ' + terms.equipment.toLowerCase() + ' configured.<br>' +
+      '<a href="#" onclick="showView(\'settings\');return false;">Add ' + terms.equipment.toLowerCase() + ' in Settings</a></div>';
     return;
   }
 
@@ -378,7 +416,7 @@ function drawDevices(s) {
     if (zoneOrder.length > 1 || zoneId !== '_none') {
       var title = document.createElement('div');
       title.className = 'zone-title';
-      title.textContent = zoneId === '_none' ? 'Unassigned' : (zoneNames[zoneId] || zoneId);
+      title.textContent = zoneId === '_none' ? 'Unassigned' : ((zoneNames[zoneId] || zoneId));
       section.appendChild(title);
     }
 
@@ -476,6 +514,10 @@ function refresh() {
       if (s.env_name) {
         document.getElementById('env-name').textContent = s.env_name;
       }
+      if (s.env_type) {
+        applyTheme(s.env_type);
+        terms = PROFILE_TERMS[s.env_type] || PROFILE_TERMS.custom;
+      }
       hasSensors = s.sensors && s.sensors.length > 0;
       drawSensorHero(s);
       drawStatusBar(s);
@@ -503,6 +545,7 @@ function renderSettings(cfg) {
   // Environment
   document.getElementById('env-name-input').value = cfg.environment.name || '';
   document.getElementById('env-type-input').value = cfg.environment.type || 'home';
+  document.getElementById('env-theme-input').value = themeOverride || 'auto';
 
   // Zones
   var zoneList = document.getElementById('zone-list');
@@ -591,6 +634,9 @@ document.getElementById('save-env-btn').onclick = function() {
     name: document.getElementById('env-name-input').value,
     type: document.getElementById('env-type-input').value
   };
+  var themeSel = document.getElementById('env-theme-input').value;
+  setThemeOverride(themeSel === 'auto' ? '' : themeSel);
+  applyTheme(data.type);
   fetch('/api/config/environment', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
