@@ -18,8 +18,13 @@ Status: wired and verified 2026-10-15 (version register read 0x12, `LoRa.begin(4
 ## Node: Arduino Mega 2560 + SX1278 (Ra-02, 433 MHz)
 
 Status: bench wiring. Module powered from the Mega's on-board 3.3V pin with TX power limited to
-10 dBm; move to a dedicated AMS1117-3.3 regulator before relays are added. Mega -> module signals
-use resistor dividers (Mega pin -> 1 kΩ -> module pin -> 2 kΩ -> GND, about 3.3 V); SPI slowed to 1 MHz.
+10 dBm. Mega -> module signals use resistor dividers (Mega pin -> 1 kΩ -> module pin -> 2 kΩ -> GND,
+about 3.3 V); SPI slowed to 1 MHz.
+
+**Power note (2026-10-19):** The 4-channel relay module is now in use (D22-D25). The SX1278 still
+runs from the Mega's onboard 3.3V regulator. No radio reliability issues have been observed at
+10 dBm TX power. If radio dropouts appear under relay switching load, the recommended fix is a
+dedicated AMS1117-3.3 regulator for the SX1278 with a 10µF + 100nF decoupling capacitor.
 
 | SX1278 | Mega | Purpose |
 |---|---|---|

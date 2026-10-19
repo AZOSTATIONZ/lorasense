@@ -103,6 +103,7 @@ const PinReservation MEGA_RESERVATIONS[] PROGMEM = {
   {  1, PIN_RESERVED_SYSTEM, "UART0 TX"    },
   {  2, PIN_RESERVED_RADIO,  "LoRa DIO0"   },
   {  9, PIN_RESERVED_RADIO,  "LoRa RST"    },
+  { 13, PIN_RESERVED_SYSTEM, "Status LED"  },
   { 50, PIN_RESERVED_RADIO,  "LoRa MISO"   },
   { 51, PIN_RESERVED_RADIO,  "LoRa MOSI"   },
   { 52, PIN_RESERVED_RADIO,  "LoRa SCK"    },
@@ -209,7 +210,7 @@ public:
     if (!f) return;
     JsonDocument doc;
     if (deserializeJson(doc, f) != DeserializationError::Ok) { f.close(); return; }
-    JsonArray arr = doc.as<JsonArray>();
+    JsonArray arr = doc.is<JsonArray>() ? doc.as<JsonArray>() : doc["items"].as<JsonArray>();
     for (JsonObject obj : arr) {
       if (nodeCount >= MAX_NODES) break;
       NodeInstance &n = nodes[nodeCount];
@@ -229,7 +230,8 @@ public:
     File f = LittleFS.open("/config/nodes.json", "w");
     if (!f) return false;
     JsonDocument doc;
-    JsonArray arr = doc.to<JsonArray>();
+    doc["_v"] = 1;
+    JsonArray arr = doc["items"].to<JsonArray>();
     for (int i = 0; i < nodeCount; i++) {
       if (!nodes[i].active) continue;
       JsonObject obj = arr.add<JsonObject>();

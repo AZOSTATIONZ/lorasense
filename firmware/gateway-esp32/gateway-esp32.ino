@@ -72,6 +72,7 @@ float nodeTemperature = 0;
 float nodeHumidity    = 0;
 int16_t nodeAnalogValue = -1;  // raw ADC, -1 = no sensor
 uint8_t nodeAnalogPin   = 0xFF;
+uint32_t lastTelemetryAt = 0;  // uptime (ms) when last telemetry was received
 
 // =====================================================================
 //  LittleFS file server
@@ -148,6 +149,7 @@ void handleTelemetry(const uint8_t *buf, uint8_t len) {
 
   nodeOnline = true;
   lastNodeHeard = millis();
+  lastTelemetryAt = millis();
   Serial.print("[LoRa] Telemetry: temp="); Serial.print(nodeTemperature);
   Serial.print(" hum="); Serial.print(nodeHumidity);
   if (nodeAnalogPin != 0xFF) {
@@ -325,6 +327,9 @@ void handleState() {
   doc["configured"]   = config.env.configured;
   doc["config_version"] = configVersion;
   doc["config_synced"]  = configSynced;
+  if (lastTelemetryAt > 0) {
+    doc["reading_age_s"]  = (millis() - lastTelemetryAt) / 1000;
+  }
 
   // Build devices array from equipment registry + output states
   JsonArray devArr = doc["devices"].to<JsonArray>();

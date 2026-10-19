@@ -3,6 +3,9 @@
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 
+// Config schema version — bump when the JSON format changes
+const uint8_t CONFIG_SCHEMA_VERSION = 1;
+
 // Maximum limits for the config system
 const int MAX_EQUIPMENT = 8;
 const int MAX_SENSORS   = 8;
@@ -112,6 +115,7 @@ public:
     File f = LittleFS.open("/config/env.json", "w");
     if (!f) return false;
     JsonDocument doc;
+    doc["_v"]   = CONFIG_SCHEMA_VERSION;
     doc["name"] = env.name;
     doc["type"] = env.type;
     serializeJson(doc, f);
@@ -127,7 +131,7 @@ public:
     if (!f) return;
     JsonDocument doc;
     if (deserializeJson(doc, f) != DeserializationError::Ok) { f.close(); return; }
-    JsonArray arr = doc.as<JsonArray>();
+    JsonArray arr = doc.is<JsonArray>() ? doc.as<JsonArray>() : doc["items"].as<JsonArray>();
     for (JsonObject obj : arr) {
       if (zoneCount >= MAX_ZONES) break;
       Zone &z = zones[zoneCount];
@@ -144,7 +148,8 @@ public:
     File f = LittleFS.open("/config/zones.json", "w");
     if (!f) return false;
     JsonDocument doc;
-    JsonArray arr = doc.to<JsonArray>();
+    doc["_v"] = CONFIG_SCHEMA_VERSION;
+    JsonArray arr = doc["items"].to<JsonArray>();
     for (int i = 0; i < zoneCount; i++) {
       JsonObject obj = arr.add<JsonObject>();
       obj["id"] = zones[i].id;
@@ -191,7 +196,7 @@ public:
     if (!f) return;
     JsonDocument doc;
     if (deserializeJson(doc, f) != DeserializationError::Ok) { f.close(); return; }
-    JsonArray arr = doc.as<JsonArray>();
+    JsonArray arr = doc.is<JsonArray>() ? doc.as<JsonArray>() : doc["items"].as<JsonArray>();
     for (JsonObject obj : arr) {
       if (equipmentCount >= MAX_EQUIPMENT) break;
       Equipment &eq = equipment[equipmentCount];
@@ -212,7 +217,8 @@ public:
     File f = LittleFS.open("/config/equipment.json", "w");
     if (!f) return false;
     JsonDocument doc;
-    JsonArray arr = doc.to<JsonArray>();
+    doc["_v"] = CONFIG_SCHEMA_VERSION;
+    JsonArray arr = doc["items"].to<JsonArray>();
     for (int i = 0; i < equipmentCount; i++) {
       Equipment &eq = equipment[i];
       if (!eq.active) continue;
@@ -304,7 +310,7 @@ public:
     if (!f) return;
     JsonDocument doc;
     if (deserializeJson(doc, f) != DeserializationError::Ok) { f.close(); return; }
-    JsonArray arr = doc.as<JsonArray>();
+    JsonArray arr = doc.is<JsonArray>() ? doc.as<JsonArray>() : doc["items"].as<JsonArray>();
     for (JsonObject obj : arr) {
       if (sensorCount >= MAX_SENSORS) break;
       SensorInstance &s = sensors[sensorCount];
@@ -326,7 +332,8 @@ public:
     File f = LittleFS.open("/config/sensors.json", "w");
     if (!f) return false;
     JsonDocument doc;
-    JsonArray arr = doc.to<JsonArray>();
+    doc["_v"] = CONFIG_SCHEMA_VERSION;
+    JsonArray arr = doc["items"].to<JsonArray>();
     for (int i = 0; i < sensorCount; i++) {
       SensorInstance &s = sensors[i];
       if (!s.active) continue;
@@ -397,7 +404,7 @@ public:
     if (!f) return;
     JsonDocument doc;
     if (deserializeJson(doc, f) != DeserializationError::Ok) { f.close(); return; }
-    JsonArray arr = doc.as<JsonArray>();
+    JsonArray arr = doc.is<JsonArray>() ? doc.as<JsonArray>() : doc["items"].as<JsonArray>();
     for (JsonObject obj : arr) {
       if (ruleCount >= MAX_RULES) break;
       AutomationRule &r = rules[ruleCount];
@@ -420,7 +427,8 @@ public:
     File f = LittleFS.open("/config/rules.json", "w");
     if (!f) return false;
     JsonDocument doc;
-    JsonArray arr = doc.to<JsonArray>();
+    doc["_v"] = CONFIG_SCHEMA_VERSION;
+    JsonArray arr = doc["items"].to<JsonArray>();
     for (int i = 0; i < ruleCount; i++) {
       AutomationRule &r = rules[i];
       JsonObject obj = arr.add<JsonObject>();
