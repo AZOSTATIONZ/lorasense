@@ -499,6 +499,7 @@ function loadHistory() {
       chartData = data;
       drawChart();
       drawStatsRow();
+      updateDataCount();
     });
 }
 
@@ -627,6 +628,58 @@ document.getElementById('chart-range').onclick = function(e) {
 
 // Resize redraw
 window.addEventListener('resize', drawChart);
+
+// =====================================================================
+//  Phase 13: Data export & history management
+// =====================================================================
+function updateDataCount() {
+  var el = document.getElementById('data-count');
+  if (!el) return;
+  if (chartData && chartData.length > 0) {
+    el.textContent = chartData.length + ' pts';
+  } else {
+    el.textContent = '';
+  }
+}
+
+function exportCsv() {
+  if (!chartData || chartData.length === 0) return;
+  var envName = 'LoRaSense';
+  var nameEl = document.getElementById('env-name');
+  if (nameEl && nameEl.textContent) envName = nameEl.textContent.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+  var rows = ['timestamp,temperature_c,humidity_pct'];
+  for (var i = 0; i < chartData.length; i++) {
+    var p = chartData[i];
+    var d = new Date(p.t * 1000);
+    var ts = d.getFullYear() + '-' +
+      ('0' + (d.getMonth()+1)).slice(-2) + '-' +
+      ('0' + d.getDate()).slice(-2) + ' ' +
+      ('0' + d.getHours()).slice(-2) + ':' +
+      ('0' + d.getMinutes()).slice(-2) + ':' +
+      ('0' + d.getSeconds()).slice(-2);
+    var tc = p.tc !== undefined ? p.tc.toFixed(1) : '';
+    var h = p.h !== undefined ? p.h.toFixed(1) : '';
+    rows.push(ts + ',' + tc + ',' + h);
+  }
+
+  var csv = rows.join('\n');
+  var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  var url = URL.createObjectURL(blob);
+  var now = new Date();
+  var dateStr = now.getFullYear() +
+    ('0' + (now.getMonth()+1)).slice(-2) +
+    ('0' + now.getDate()).slice(-2);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = envName + '_history_' + dateStr + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('export-csv-btn').onclick = exportCsv;
 
 function drawActiveRules(s) {
   var box = document.getElementById('active-rules');
