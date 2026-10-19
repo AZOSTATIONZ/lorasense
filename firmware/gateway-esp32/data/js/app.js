@@ -735,14 +735,28 @@ function deleteRule(id) {
 // =====================================================================
 //  Onboarding Wizard
 // =====================================================================
+var WIZ_STEPS = 7;
 var wizStep = 1;
 var wizData = {
   env_name: 'My Home',
   env_type: 'home',
   zones: [],
-  equipment: []
+  equipment: [],
+  sensors: []
 };
 var wizRelayUsed = {};
+var wizPinUsed = {};
+var wizDrivers = [];
+
+// Environment profile templates — suggestions only, not auto-created
+var ENV_PROFILES = {
+  home:       { sensors: ['DHT11 — Room temperature & humidity'], equipment: ['Lights', 'Fan'] },
+  farm:       { sensors: ['DHT11 — Ambient monitoring', 'Analog — Soil moisture'], equipment: ['Irrigation pump', 'Ventilation fan'] },
+  greenhouse: { sensors: ['DHT11 — Climate monitoring', 'Analog — Soil moisture'], equipment: ['Exhaust fan', 'Water pump', 'Grow lights'] },
+  industrial: { sensors: ['DHT22 — Precision monitoring', 'Analog — Process sensor'], equipment: ['Cooling system', 'Alarm relay'] },
+  lab:        { sensors: ['DHT22 — Lab environment', 'Analog — Instrument input'], equipment: ['Fume hood fan', 'Equipment power'] },
+  custom:     { sensors: ['Add sensors for your use case'], equipment: ['Add equipment as needed'] }
+};
 
 function showWizard() {
   document.getElementById('view-dashboard').style.display = 'none';
@@ -750,15 +764,22 @@ function showWizard() {
   document.getElementById('view-wizard').style.display = '';
   document.querySelector('header').style.display = 'none';
   clearInterval(pollTimer);
+  // Load driver data for sensor step
+  fetch('/api/hw/drivers').then(function(r){return r.json();}).then(function(data){
+    wizDrivers = Array.isArray(data) ? data : (data.drivers || []);
+  });
+  fetch('/api/hw/pins').then(function(r){return r.json();}).then(function(pins){
+    window._wizPinData = pins;
+  });
   wizGoTo(1);
 }
 
 function wizGoTo(step) {
   wizStep = step;
-  for (var i = 1; i <= 5; i++) {
+  for (var i = 1; i <= WIZ_STEPS; i++) {
     document.getElementById('wiz-' + i).style.display = (i === step) ? '' : 'none';
   }
-  document.getElementById('wizard-bar').style.width = (step * 20) + '%';
+  document.getElementById('wizard-bar').style.width = Math.round(step / WIZ_STEPS * 100) + '%';
 }
 
 // Step 1: name
@@ -769,7 +790,17 @@ document.getElementById('wiz-next-1').onclick = function() {
   wizGoTo(2);
 };
 
-// Step 2: type
+// Step 2: type + profile hint
+function updateProfileHint() {
+  var hint = document.getElementById('wiz-profile-hint');
+  var profile = ENV_PROFILES[wizData.env_type];
+  if (!profile) { hint.innerHTML = ''; return; }
+  hint.innerHTML = '<strong>Suggested for ' + wizData.env_type + ':</strong><br>' +
+    '<span style="color:var(--muted)">Sensors: ' + profile.sensors.join(', ') + '<br>' +
+    'Equipment: ' + profile.equipment.join(', ') + '</span><br>' +
+    '<small>These are suggestions — you choose what to add in the next steps.</small>';
+}
+
 var typeGrid = document.getElementById('wiz-type-grid');
 typeGrid.onclick = function(e) {
   var btn = e.target.closest('.wiz-type-btn');
@@ -778,9 +809,10 @@ typeGrid.onclick = function(e) {
   for (var i = 0; i < btns.length; i++) btns[i].className = 'wiz-type-btn';
   btn.className = 'wiz-type-btn selected';
   wizData.env_type = btn.getAttribute('data-type');
+  updateProfileHint();
 };
 document.getElementById('wiz-back-2').onclick = function() { wizGoTo(1); };
-document.getElementById('wiz-next-2').onclick = function() { wizGoTo(3); };
+document.getElementById('wiz-next-2').onclick = function() { updateProfileHint(); wizGoTo(3); };
 
 // Step 3: zones
 function renderWizZones() {
@@ -819,19 +851,25 @@ document.getElementById('wiz-next-3').onclick = function() {
     wizData.zones.push({ id: 'z_main', name: 'Main' });
     renderWizZones();
   }
-  // Populate zone dropdown for equipment step
-  var sel = document.getElementById('wiz-eq-zone');
-  sel.innerHTML = '';
-  for (var i = 0; i < wizData.zones.length; i++) {
-    var opt = document.createElement('option');
-    opt.value = wizData.zones[i].id;
-    opt.textContent = wizData.zones[i].name;
-    sel.appendChild(opt);
-  }
+  populateWizZoneDropdowns();
   updateWizRelayDropdown();
   renderWizEquipment();
   wizGoTo(4);
 };
+
+function populateWizZoneDropdowns() {
+  var sels = [document.getElementById('wiz-eq-zone'), document.getElementById('wiz-sensor-zone')];
+  for (var s = 0; s < sels.length; s++) {
+    if (!sels[s]) continue;
+    sels[s].innerHTML = '<option value="">No zone</option>';
+    for (var i = 0; i < wizData.zones.length; i++) {
+      var opt = document.createElement('option');
+      opt.value = wizData.zones[i].id;
+      opt.textContent = wizData.zones[i].name;
+      sels[s].appendChild(opt);
+    }
+  }
+}
 
 // Step 4: equipment
 function updateWizRelayDropdown() {
@@ -894,19 +932,176 @@ document.getElementById('wiz-add-eq').onclick = function() {
 };
 
 document.getElementById('wiz-back-4').onclick = function() { wizGoTo(3); };
+document.getElementById('wiz-next-4').onclick = function() {
+  populateWizSensorForm();
+  renderWizSensors();
+  wizGoTo(5);
+};
+
+// Step 5: sensors
+function populateWizSensorForm() {
+  var sel = document.getElementById('wiz-sensor-type');
+  sel.innerHTML = '';
+  for (var i = 0; i < wizDrivers.length; i++) {
+    var d = wizDrivers[i];
+    if (!d.supported) continue;
+    var opt = document.createElement('option');
+    opt.value = d.type;
+    opt.textContent = d.name;
+    sel.appendChild(opt);
+  }
+  updateWizSensorPins();
+}
+
+function updateWizSensorPins() {
+  var pins = window._wizPinData || [];
+  var sel = document.getElementById('wiz-sensor-pin');
+  sel.innerHTML = '';
+  var typeVal = parseInt(document.getElementById('wiz-sensor-type').value);
+  var driver = null;
+  for (var d = 0; d < wizDrivers.length; d++) {
+    if (wizDrivers[d].type === typeVal) { driver = wizDrivers[d]; break; }
+  }
+  var capFilter = driver ? (CAP_NAMES[driver.pin_req] || '') : 'DI';
+  var info = document.getElementById('wiz-sensor-pin-info');
+  if (info) {
+    info.textContent = capFilter ? 'Requires: ' + capFilter + ' capable pin' : '';
+    if (driver && driver.pin_req === 0) {
+      info.textContent = 'Bus device — no pin needed';
+      sel.innerHTML = '<option value="255">None (bus)</option>';
+      sel.style.display = 'none';
+      return;
+    }
+    sel.style.display = '';
+  }
+  for (var i = 0; i < pins.length; i++) {
+    var p = pins[i];
+    if (p.state !== 0) continue;
+    if (wizPinUsed[p.pin]) continue;
+    if (capFilter && p.caps.indexOf(capFilter) < 0) continue;
+    var opt = document.createElement('option');
+    opt.value = p.pin;
+    opt.textContent = p.name + ' (' + p.caps + ')';
+    sel.appendChild(opt);
+  }
+}
+
+var wizSensorTypeEl = document.getElementById('wiz-sensor-type');
+if (wizSensorTypeEl) wizSensorTypeEl.onchange = updateWizSensorPins;
+
+function renderWizSensors() {
+  var list = document.getElementById('wiz-sensor-list');
+  list.innerHTML = '';
+  for (var i = 0; i < wizData.sensors.length; i++) {
+    var s = wizData.sensors[i];
+    var div = document.createElement('div');
+    div.className = 'wiz-eq-item';
+    var pinText = s.pin !== 255 ? 'Pin ' + s.pin_name : 'Bus';
+    div.innerHTML =
+      '<div><div style="font-weight:500">' + escHtml(s.name) + '</div>' +
+      '<div class="wiz-eq-meta">' + escHtml(s.driver_name) + ' · ' + pinText + '</div></div>';
+    var del = document.createElement('button');
+    del.className = 'btn-danger';
+    del.textContent = 'Remove';
+    (function(idx) {
+      del.onclick = function() {
+        var removed = wizData.sensors.splice(idx, 1)[0];
+        if (removed.pin !== 255) delete wizPinUsed[removed.pin];
+        updateWizSensorPins();
+        renderWizSensors();
+      };
+    })(i);
+    div.appendChild(del);
+    list.appendChild(div);
+  }
+}
+
+document.getElementById('wiz-add-sensor').onclick = function() {
+  var name = document.getElementById('wiz-sensor-name').value.trim();
+  if (!name) return;
+  var type = parseInt(document.getElementById('wiz-sensor-type').value);
+  var pin = parseInt(document.getElementById('wiz-sensor-pin').value);
+  var driverName = '';
+  for (var d = 0; d < wizDrivers.length; d++) {
+    if (wizDrivers[d].type === type) { driverName = wizDrivers[d].name; break; }
+  }
+  var pinName = '';
+  if (pin !== 255 && window._wizPinData) {
+    for (var i = 0; i < window._wizPinData.length; i++) {
+      if (window._wizPinData[i].pin === pin) { pinName = window._wizPinData[i].name; break; }
+    }
+  }
+  var id = 'sen_' + Date.now().toString(36);
+  var sensor = {
+    id: id, name: name, type: type, pin: pin,
+    zone_id: document.getElementById('wiz-sensor-zone').value,
+    driver_name: driverName, pin_name: pinName
+  };
+  wizData.sensors.push(sensor);
+  if (pin !== 255) wizPinUsed[pin] = true;
+  document.getElementById('wiz-sensor-name').value = '';
+  updateWizSensorPins();
+  renderWizSensors();
+};
+
+document.getElementById('wiz-back-5').onclick = function() { wizGoTo(4); };
+document.getElementById('wiz-next-5').onclick = function() {
+  renderWizSummary();
+  wizGoTo(6);
+};
+
+// Step 6: summary + validation
+function renderWizSummary() {
+  var html = '<div class="wiz-summary-section">' +
+    '<h4>' + escHtml(wizData.env_name) + ' <small style="color:var(--muted)">(' + wizData.env_type + ')</small></h4>' +
+    '<table style="width:100%;font-size:13px;border-collapse:collapse">';
+  html += '<tr><td style="padding:4px 8px;font-weight:500">Zones</td><td>' +
+    (wizData.zones.length ? wizData.zones.map(function(z){return escHtml(z.name);}).join(', ') : '<em>None</em>') + '</td></tr>';
+  html += '<tr><td style="padding:4px 8px;font-weight:500">Equipment</td><td>' +
+    (wizData.equipment.length ? wizData.equipment.map(function(e){
+      var relay = e.output !== 255 ? ' (Relay ' + (e.output+1) + ')' : '';
+      return escHtml(e.name) + relay;
+    }).join(', ') : '<em>None</em>') + '</td></tr>';
+  html += '<tr><td style="padding:4px 8px;font-weight:500">Sensors</td><td>' +
+    (wizData.sensors.length ? wizData.sensors.map(function(s){
+      return escHtml(s.name) + ' (' + escHtml(s.driver_name) + ')';
+    }).join(', ') : '<em>None</em>') + '</td></tr>';
+  html += '</table></div>';
+
+  document.getElementById('wiz-summary').innerHTML = html;
+
+  // Validation
+  var issues = [];
+  if (wizData.zones.length === 0) issues.push('No zones defined');
+  if (wizData.sensors.length === 0) issues.push('No sensors added');
+  var valEl = document.getElementById('wiz-validation');
+  if (issues.length) {
+    valEl.textContent = 'Warning: ' + issues.join('. ') + '. You can still finish, but the system won\'t be fully functional.';
+    valEl.style.display = '';
+  } else {
+    valEl.style.display = 'none';
+  }
+}
+
+document.getElementById('wiz-back-6').onclick = function() { wizGoTo(5); };
 
 document.getElementById('wiz-finish').onclick = function() {
   var payload = {
     env_name: wizData.env_name,
     env_type: wizData.env_type,
     zones: wizData.zones,
-    equipment: []
+    equipment: [],
+    sensors: []
   };
   for (var i = 0; i < wizData.equipment.length; i++) {
     var eq = wizData.equipment[i];
     var obj = { id: eq.id, name: eq.name, category: eq.category, zone_id: eq.zone_id };
     if (eq.output !== 255) obj.output = eq.output;
     payload.equipment.push(obj);
+  }
+  for (var i = 0; i < wizData.sensors.length; i++) {
+    var s = wizData.sensors[i];
+    payload.sensors.push({ id: s.id, name: s.name, type: s.type, pin: s.pin, zone_id: s.zone_id });
   }
 
   fetch('/api/onboarding', {
@@ -915,7 +1110,11 @@ document.getElementById('wiz-finish').onclick = function() {
     body: JSON.stringify(payload)
   }).then(function(res) { return res.json(); })
     .then(function(r) {
-      if (r.ok) wizGoTo(5);
+      if (r.ok) {
+        var csEl = document.getElementById('wiz-commission-status');
+        if (csEl) csEl.innerHTML = '<strong>Status:</strong> Configured ✔';
+        wizGoTo(7);
+      }
     });
 };
 

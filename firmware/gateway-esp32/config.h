@@ -14,11 +14,20 @@ const int MAX_RULES     = 8;
 const int ID_LEN        = 16;
 const int NAME_LEN      = 32;
 
+// Commissioning status — tracks installation completeness
+enum CommissionStatus : uint8_t {
+  CS_DRAFT        = 0,  // wizard started but not finished
+  CS_CONFIGURED   = 1,  // wizard complete, system configured
+  CS_TESTED       = 2,  // technician has verified operation
+  CS_COMMISSIONED = 3,  // installation signed off
+};
+
 // --- Environment ---
 struct Environment {
   char name[NAME_LEN];
   char type[16];       // home, farm, greenhouse, industrial, lab, custom
   bool configured;
+  CommissionStatus commissionStatus;
 };
 
 // --- Zone ---
@@ -116,6 +125,7 @@ public:
     if (deserializeJson(doc, f) == DeserializationError::Ok) {
       strlcpy(env.name, doc["name"] | "My Home", NAME_LEN);
       strlcpy(env.type, doc["type"] | "home", sizeof(env.type));
+      env.commissionStatus = (CommissionStatus)(doc["commission"] | (int)CS_DRAFT);
       env.configured = true;
     }
     f.close();
@@ -129,6 +139,7 @@ public:
     doc["_v"]   = CONFIG_SCHEMA_VERSION;
     doc["name"] = env.name;
     doc["type"] = env.type;
+    doc["commission"] = (int)env.commissionStatus;
     serializeJson(doc, f);
     f.close();
     env.configured = true;

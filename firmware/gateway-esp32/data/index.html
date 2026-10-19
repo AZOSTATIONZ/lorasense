@@ -19,7 +19,7 @@
 <main>
   <div class="banner" id="banner">Lost connection to the gateway. Retrying&hellip;</div>
 
-  <!-- Onboarding wizard -->
+  <!-- Onboarding wizard (7 steps) -->
   <div id="view-wizard" style="display:none">
     <div class="wizard-card">
       <div class="wizard-progress"><div class="wizard-bar" id="wizard-bar"></div></div>
@@ -35,7 +35,7 @@
         <button class="btn-primary" id="wiz-next-1">Next</button>
       </div>
 
-      <!-- Step 2: Environment type -->
+      <!-- Step 2: Environment type + profile suggestions -->
       <div class="wizard-step" id="wiz-2" style="display:none">
         <h2>Environment Type</h2>
         <p class="wizard-desc">What kind of space are you monitoring?</p>
@@ -47,6 +47,7 @@
           <button class="wiz-type-btn" data-type="lab">Laboratory</button>
           <button class="wiz-type-btn" data-type="custom">Custom</button>
         </div>
+        <div id="wiz-profile-hint" class="wiz-profile-hint"></div>
         <div class="wiz-nav">
           <button class="text-btn" id="wiz-back-2">&larr; Back</button>
           <button class="btn-primary" id="wiz-next-2">Next</button>
@@ -108,14 +109,58 @@
         </div>
         <div class="wiz-nav">
           <button class="text-btn" id="wiz-back-4">&larr; Back</button>
+          <button class="btn-primary" id="wiz-next-4">Next</button>
+        </div>
+      </div>
+
+      <!-- Step 5: Sensors -->
+      <div class="wizard-step" id="wiz-5" style="display:none">
+        <h2>Add Sensors</h2>
+        <p class="wizard-desc">What sensors are connected? Select a type and assign a pin.</p>
+        <div id="wiz-sensor-list"></div>
+        <div class="wiz-eq-form">
+          <div class="form-row">
+            <label>Type</label>
+            <select id="wiz-sensor-type"></select>
+          </div>
+          <div class="form-row">
+            <label>Name</label>
+            <input type="text" id="wiz-sensor-name" maxlength="31" placeholder="e.g. Room temperature">
+          </div>
+          <div class="form-row">
+            <label>Pin</label>
+            <select id="wiz-sensor-pin"></select>
+            <small id="wiz-sensor-pin-info" style="color:var(--muted)"></small>
+          </div>
+          <div class="form-row">
+            <label>Zone</label>
+            <select id="wiz-sensor-zone"></select>
+          </div>
+          <button class="btn-small" id="wiz-add-sensor">Add sensor</button>
+        </div>
+        <div class="wiz-nav">
+          <button class="text-btn" id="wiz-back-5">&larr; Back</button>
+          <button class="btn-primary" id="wiz-next-5">Next</button>
+        </div>
+      </div>
+
+      <!-- Step 6: Summary -->
+      <div class="wizard-step" id="wiz-6" style="display:none">
+        <h2>Installation Summary</h2>
+        <p class="wizard-desc">Review your configuration before finishing.</p>
+        <div id="wiz-summary"></div>
+        <div id="wiz-validation" class="form-error" style="display:none"></div>
+        <div class="wiz-nav">
+          <button class="text-btn" id="wiz-back-6">&larr; Back</button>
           <button class="btn-primary" id="wiz-finish">Finish Setup</button>
         </div>
       </div>
 
-      <!-- Step 5: Done -->
-      <div class="wizard-step" id="wiz-5" style="display:none">
+      <!-- Step 7: Done -->
+      <div class="wizard-step" id="wiz-7" style="display:none">
         <h2>All Set!</h2>
-        <p class="wizard-desc">Your LoRaSense system is configured and ready to use.</p>
+        <p class="wizard-desc">Your LoRaSense system is configured and commissioned.</p>
+        <div id="wiz-commission-status" style="margin:12px 0;padding:12px;border-radius:8px;background:var(--card-bg,#f0f0f0);text-align:center"></div>
         <button class="btn-primary" id="wiz-go-dashboard">Go to Dashboard</button>
       </div>
     </div>

@@ -349,6 +349,8 @@ void handleState() {
   doc["rssi"]         = LoRa.packetRssi();
   doc["protocol_ver"] = PROTOCOL_VERSION;
   doc["configured"]   = config.env.configured;
+  doc["commission"]   = (int)config.env.commissionStatus;
+  doc["commission_label"] = commissionName(config.env.commissionStatus);
   doc["config_version"] = configVersion;
   doc["config_synced"]  = configSynced;
   if (lastTelemetryAt > 0) {
@@ -795,8 +797,76 @@ void handleOnboarding() {
   }
   syncRelayLabels();
 
+  // Sensors (added in Phase 4 wizard)
+  JsonArray sensors = doc["sensors"].as<JsonArray>();
+  for (JsonObject s : sensors) {
+    const char *id   = s["id"] | "";
+    const char *name = s["name"] | "";
+    uint8_t type     = s["type"] | 0;
+    uint8_t pin      = s["pin"] | 0xFF;
+    const char *zone = s["zone_id"] | "";
+    const char *nodeId = s["node_id"] | "mega-001";
+    if (id[0] && name[0]) config.addSensor(id, name, type, nodeId, pin, zone, true);
+  }
+  syncSensorPins();
+
+  // Mark as configured
+  config.env.commissionStatus = CS_CONFIGURED;
+  config.saveEnvironment();
+  bumpConfigVersion();
+
   Serial.println("[Onboarding] Setup complete.");
   server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// =====================================================================
+//  HTTP: POST /api/commission — advance commissioning status
+// =====================================================================
+const char *commissionName(CommissionStatus s) {
+  switch (s) {
+    case CS_CONFIGURED:   return "configured";
+    case CS_TESTED:       return "tested";
+    case CS_COMMISSIONED: return "commissioned";
+    default:              return "draft";
+  }
+}
+
+void handleCommission() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) {
+    server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+    return;
+  }
+  int status = doc["status"] | -1;
+  if (status < CS_DRAFT || status > CS_COMMISSIONED) {
+    server.send(400, "application/json", "{\"error\":\"invalid status (0-3)\"}");
+    return;
+  }
+  // Validate minimum requirements for commissioning
+  if (status >= CS_CONFIGURED) {
+    if (!config.env.configured) {
+      server.send(409, "application/json", "{\"error\":\"environment not configured\"}");
+      return;
+    }
+    if (config.zoneCount == 0) {
+      server.send(409, "application/json", "{\"error\":\"at least one zone required\"}");
+      return;
+    }
+    if (config.sensorCount == 0) {
+      server.send(409, "application/json", "{\"error\":\"at least one sensor required\"}");
+      return;
+    }
+  }
+  config.env.commissionStatus = (CommissionStatus)status;
+  config.saveEnvironment();
+  String resp = "{\"ok\":true,\"status\":\"";
+  resp += commissionName(config.env.commissionStatus);
+  resp += "\"}";
+  server.send(200, "application/json", resp);
 }
 
 // =====================================================================
@@ -1442,6 +1512,7 @@ void setup() {
 
   // Onboarding
   server.on("/api/onboarding",          HTTP_POST,   handleOnboarding);
+  server.on("/api/commission",          HTTP_POST,   handleCommission);
 
   // Rules API
   server.on("/api/rules",              HTTP_GET,    handleGetRules);
