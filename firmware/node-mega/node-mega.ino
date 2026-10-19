@@ -35,10 +35,10 @@ const int  SPREADING = 9;
 const long BANDWIDTH = 125E3;
 const int  TX_POWER  = 10;
 
-// --- Timing (reduced TX frequency = less chance of getting stuck) ---
-const uint32_t TELEMETRY_INTERVAL_MS = 10000;   // was 5s, now 10s
-const uint32_t HEARTBEAT_INTERVAL_MS = 30000;   // was 10s, now 30s
-const uint32_t FAILSAFE_TIMEOUT_MS   = 60000;   // extended to match slower heartbeat
+// --- Timing (mutable for config sync) ---
+uint32_t telemetryIntervalMs = 10000;
+uint32_t heartbeatIntervalMs = 30000;
+uint32_t failsafeTimeoutMs   = 60000;
 const uint32_t RADIO_WATCHDOG_MS     = 15000;
 
 uint32_t lastTelemetry = 0;
@@ -49,12 +49,21 @@ bool failsafeActive = false;
 
 const int PIN_LED = 13;
 
-// --- DHT22 sensor ---
-const uint8_t PIN_DHT = 7;
-DHT dht(PIN_DHT, DHT22);
+// --- DHT sensor (dynamically re-initializable for config sync) ---
+uint8_t configDhtPin = 7;
+DHT *dhtSensor = nullptr;
 float lastTempC = 0;
 float lastHumid = 0;
 bool  sensorOk  = false;
+uint8_t configVersion = 0xFF;  // 0xFF = no config received yet
+
+void initDht(uint8_t pin) {
+  if (dhtSensor) delete dhtSensor;
+  configDhtPin = pin;
+  dhtSensor = new DHT(pin, DHT22);
+  dhtSensor->begin();
+  Serial.print("[Config] DHT sensor on pin "); Serial.println(pin);
+}
 
 // =====================================================================
 //  Relay control
@@ -142,8 +151,9 @@ void sendAck(uint8_t seq, uint8_t deviceIdx, bool actualOn, bool ok) {
 //  Send telemetry
 // =====================================================================
 void readSensor() {
-  float t = dht.readTemperature();
-  float h = dht.readHumidity();
+  if (!dhtSensor) return;
+  float t = dhtSensor->readTemperature();
+  float h = dhtSensor->readHumidity();
   if (isnan(t) || isnan(h)) {
     Serial.println("[DHT] read FAILED (NaN)");
     return;
@@ -207,7 +217,45 @@ void handleIncoming(const uint8_t *buf, uint8_t len) {
   }
 
   if (hdr->type == MSG_CONFIG_PUSH) {
-    Serial.println("[LoRa] RX config push (not yet handled)");
+    if (len < HEADER_SIZE + sizeof(ConfigPushPayload) + CRC_SIZE) return;
+    ConfigPushPayload *cfg = (ConfigPushPayload *)(buf + HEADER_SIZE);
+
+    if (cfg->configType == CFG_FULL_SYNC && cfg->dataLen == 8) {
+      uint8_t ver       = cfg->data[0];
+      uint8_t sensType  = cfg->data[1];
+      uint8_t sensPin   = cfg->data[2];
+      uint16_t telSec   = ((uint16_t)cfg->data[3] << 8) | cfg->data[4];
+      uint16_t fsSec    = ((uint16_t)cfg->data[5] << 8) | cfg->data[6];
+      uint8_t relayCnt  = cfg->data[7];
+
+      Serial.print("[Config] v"); Serial.print(ver);
+      Serial.print(" sensor="); Serial.print(sensType);
+      Serial.print(" pin="); Serial.print(sensPin);
+      Serial.print(" tel="); Serial.print(telSec);
+      Serial.print("s fs="); Serial.print(fsSec);
+      Serial.print("s relays="); Serial.println(relayCnt);
+
+      if (sensPin != 0xFF && sensPin != configDhtPin) {
+        initDht(sensPin);
+      }
+      if (telSec >= 2 && telSec <= 300) {
+        telemetryIntervalMs = (uint32_t)telSec * 1000;
+      }
+      if (fsSec >= 10 && fsSec <= 600) {
+        failsafeTimeoutMs = (uint32_t)fsSec * 1000;
+      }
+      configVersion = ver;
+
+      // Send CONFIG_ACK
+      ConfigAckPayload ack;
+      ack.configType = CFG_FULL_SYNC;
+      ack.version    = ver;
+      uint8_t ackBuf[FRAME_MAX];
+      uint8_t ackLen = buildFrame(ackBuf, ADDR_GATEWAY, ADDR_NODE1,
+                                  MSG_CONFIG_ACK, hdr->seq, &ack, sizeof(ack));
+      loRaSend(ackBuf, ackLen);
+      Serial.print("[Config] ACK sent for v"); Serial.println(ver);
+    }
     return;
   }
 
@@ -247,9 +295,8 @@ void setup() {
   pinMode(PIN_LED, OUTPUT);
   Serial.println("Relays initialised (all OFF).");
 
-  dht.begin();
+  initDht(configDhtPin);
   delay(2000);
-  Serial.println("DHT11 sensor on pin 7.");
 
   // LoRa radio — full hard reset to start clean
   hardResetRadio();
@@ -284,14 +331,14 @@ void loop() {
     }
   }
 
-  // --- Periodic telemetry (every 10s) ---
-  if (millis() - lastTelemetry >= TELEMETRY_INTERVAL_MS) {
+  // --- Periodic telemetry ---
+  if (millis() - lastTelemetry >= telemetryIntervalMs) {
     sendTelemetry();
     lastTelemetry = millis();
   }
 
-  // --- Periodic heartbeat (every 30s) ---
-  if (millis() - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
+  // --- Periodic heartbeat ---
+  if (millis() - lastHeartbeat >= heartbeatIntervalMs) {
     sendHeartbeat();
     lastHeartbeat = millis();
   }
@@ -303,7 +350,7 @@ void loop() {
   }
 
   // --- Fail-safe ---
-  if (!failsafeActive && millis() - lastGatewayHeard > FAILSAFE_TIMEOUT_MS) {
+  if (!failsafeActive && millis() - lastGatewayHeard > failsafeTimeoutMs) {
     Serial.println("[SAFETY] No gateway for 60s -> all relays OFF");
     allRelaysOff();
     digitalWrite(PIN_LED, LOW);

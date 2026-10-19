@@ -59,6 +59,14 @@ const uint32_t HISTORY_INTERVAL_MS = 300000;  // 5 minutes
 uint32_t lastHistorySample = 0;
 bool firstSampleTaken = false;
 
+// --- Config sync ---
+uint8_t  configVersion    = 0;
+uint8_t  nodeConfigVersion = 0xFF;  // 0xFF = not yet synced
+bool     configSynced     = false;
+uint32_t lastConfigPush   = 0;
+const uint32_t CONFIG_PUSH_INTERVAL_MS = 10000;  // retry every 10s until ACK
+const uint32_t CONFIG_PUSH_INITIAL_DELAY_MS = 3000;  // wait for node after boot
+
 // --- Telemetry from node ---
 float nodeTemperature = 0;
 float nodeHumidity    = 0;
@@ -177,7 +185,17 @@ void checkIncoming() {
     Serial.println("[LoRa] Heartbeat received");
   }
   else if (hdr->type == MSG_CONFIG_ACK) {
-    Serial.println("[LoRa] Config ACK received");
+    if (n >= (int)(HEADER_SIZE + sizeof(ConfigAckPayload) + CRC_SIZE)) {
+      ConfigAckPayload *ack = (ConfigAckPayload *)(buf + HEADER_SIZE);
+      nodeConfigVersion = ack->version;
+      if (ack->version == configVersion) {
+        configSynced = true;
+        Serial.print("[Sync] Node confirmed config v"); Serial.println(ack->version);
+      } else {
+        Serial.print("[Sync] Node ACK v"); Serial.print(ack->version);
+        Serial.print(" but current is v"); Serial.println(configVersion);
+      }
+    }
   }
 }
 
@@ -191,6 +209,54 @@ void sendKeepalive() {
   LoRa.beginPacket();
   LoRa.write(buf, len);
   LoRa.endPacket();
+}
+
+// =====================================================================
+//  Config sync — push config to node over LoRa
+// =====================================================================
+void bumpConfigVersion() {
+  configVersion++;
+  configSynced = false;
+  Serial.print("[Sync] Config version bumped to "); Serial.println(configVersion);
+}
+
+void pushConfigToNode() {
+  uint8_t sensType = 0;
+  uint8_t sensPin  = 0xFF;
+  for (int i = 0; i < config.sensorCount; i++) {
+    if (config.sensors[i].active && config.sensors[i].enabled) {
+      sensType = config.sensors[i].sensorType;
+      sensPin  = config.sensors[i].pin;
+      break;
+    }
+  }
+
+  uint16_t telSec = 10;  // default telemetry interval
+  uint16_t fsSec  = 60;  // default fail-safe timeout
+
+  ConfigPushPayload cfg;
+  cfg.configType = CFG_FULL_SYNC;
+  cfg.dataLen    = 8;
+  cfg.data[0]    = configVersion;
+  cfg.data[1]    = sensType;
+  cfg.data[2]    = sensPin;
+  cfg.data[3]    = (telSec >> 8) & 0xFF;
+  cfg.data[4]    = telSec & 0xFF;
+  cfg.data[5]    = (fsSec >> 8) & 0xFF;
+  cfg.data[6]    = fsSec & 0xFF;
+  cfg.data[7]    = MEGA_RELAY_COUNT;
+
+  uint8_t buf[FRAME_MAX];
+  uint8_t len = buildFrame(buf, ADDR_NODE1, ADDR_GATEWAY,
+                           MSG_CONFIG_PUSH, nextSeq++, &cfg, sizeof(cfg));
+  LoRa.beginPacket();
+  LoRa.write(buf, len);
+  LoRa.endPacket();
+
+  lastConfigPush = millis();
+  Serial.print("[Sync] Pushed config v"); Serial.print(configVersion);
+  Serial.print(" sensor="); Serial.print(sensType);
+  Serial.print(" pin="); Serial.println(sensPin);
 }
 
 // =====================================================================
@@ -239,6 +305,8 @@ void handleState() {
   doc["rssi"]         = LoRa.packetRssi();
   doc["protocol_ver"] = PROTOCOL_VERSION;
   doc["configured"]   = config.env.configured;
+  doc["config_version"] = configVersion;
+  doc["config_synced"]  = configSynced;
 
   // Build devices array from equipment registry + output states
   JsonArray devArr = doc["devices"].to<JsonArray>();
@@ -937,6 +1005,7 @@ void handleAddSensor() {
     server.send(409, "application/json", "{\"error\":\"sensor exists or limit reached\"}");
     return;
   }
+  bumpConfigVersion();
   server.send(201, "application/json", "{\"ok\":true}");
 }
 
@@ -950,6 +1019,7 @@ void handleDeleteSensor() {
     server.send(404, "application/json", "{\"error\":\"not found\"}");
     return;
   }
+  bumpConfigVersion();
   server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -1291,6 +1361,12 @@ void loop() {
   if (nodeOnline && millis() - lastAutomation >= AUTOMATION_INTERVAL_MS) {
     evaluateRules();
     lastAutomation = millis();
+  }
+
+  // Config sync: push config to node until ACK received
+  if (!configSynced && millis() > CONFIG_PUSH_INITIAL_DELAY_MS &&
+      millis() - lastConfigPush >= CONFIG_PUSH_INTERVAL_MS) {
+    pushConfigToNode();
   }
 
   // Sensor history: first sample on first telemetry, then every 5 min

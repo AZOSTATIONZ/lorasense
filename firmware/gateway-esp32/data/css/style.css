@@ -58,6 +58,8 @@ main { padding: 8px 16px 32px; max-width: 640px; margin: 0 auto; }
 }
 .status-dot.online { background: var(--on); }
 .status-dot.offline { background: var(--fail); }
+.sync-ok { color: var(--on); }
+.sync-pending { color: var(--pending); }
 .status-item { display: flex; align-items: center; gap: 2px; }
 .status-bar .spacer { flex: 1; }
 

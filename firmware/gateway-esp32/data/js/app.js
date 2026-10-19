@@ -117,9 +117,13 @@ function drawStatusBar(s) {
   var nodeText = s.node_online ? 'Node online' : 'Node offline';
   var rssiText = s.node_online ? signalLabel(s.rssi) + ' (' + s.rssi + ' dBm)' : '--';
 
+  var syncText = s.config_synced ? 'Synced' : 'Pending';
+  var syncClass = s.config_synced ? 'sync-ok' : 'sync-pending';
+
   bar.innerHTML =
     '<div class="status-item"><span class="status-dot ' + dotClass + '"></span>' + nodeText + '</div>' +
     '<div class="spacer"></div>' +
+    '<div class="status-item"><span class="' + syncClass + '">' + syncText + '</span></div>' +
     '<div class="status-item">\u{1F4F6} ' + rssiText + '</div>' +
     '<div class="status-item">⏱ ' + formatUptime(s.uptime_s) + '</div>';
 }

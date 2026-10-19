@@ -70,11 +70,28 @@ struct __attribute__((packed)) TelemetryPayload {
   uint8_t  relayStates;     // bit 0 = relay 0, bit 1 = relay 1, etc.
 };
 
+// --- Config sync types ---
+const uint8_t CFG_FULL_SYNC = 0x01;  // full node config in one frame
+
 // --- Config push payload (gateway -> node) ---
 struct __attribute__((packed)) ConfigPushPayload {
-  uint8_t  configType;      // what config is being pushed (0x01 = relay count)
+  uint8_t  configType;      // CFG_FULL_SYNC, etc.
   uint8_t  data[8];         // config data (meaning depends on configType)
   uint8_t  dataLen;         // how many bytes of data[] are used
+};
+
+// CFG_FULL_SYNC data layout (8 bytes):
+//   [0]    config version (0-255, wraps)
+//   [1]    sensor type (SensorType enum)
+//   [2]    sensor pin (0xFF = none)
+//   [3-4]  telemetry interval in seconds (big-endian)
+//   [5-6]  fail-safe timeout in seconds (big-endian)
+//   [7]    active relay count
+
+// --- Config ACK payload (node -> gateway) ---
+struct __attribute__((packed)) ConfigAckPayload {
+  uint8_t  configType;      // echoes the config type
+  uint8_t  version;         // echoes the config version
 };
 
 // --- Frame size limits ---
