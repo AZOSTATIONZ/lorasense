@@ -504,3 +504,17 @@ button:disabled { opacity: 0.5; cursor: wait; }
   background: #f8d7da; color: #721c24; padding: 8px 12px;
   border-radius: 8px; font-size: 13px; margin-top: 8px;
 }
+/* Phase 9: Event log, system info, backup */
+.event-row { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; display: flex; gap: 8px; align-items: baseline; }
+.event-row:last-child { border-bottom: none; }
+.event-cat { font-weight: 600; text-transform: uppercase; font-size: 10px; min-width: 52px; color: var(--accent); }
+.event-time { color: var(--muted); font-size: 11px; min-width: 48px; }
+.event-msg { flex: 1; }
+.sys-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sys-item { padding: 8px; background: var(--card-bg, #f6f6f6); border-radius: var(--radius-sm); }
+.sys-label { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+.sys-value { font-size: 16px; font-weight: 600; }
+.btn-danger { background: #e74c3c; color: #fff; }
+.btn-danger:hover { background: #c0392b; }
+.auth-user-row { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.auth-user-row:last-child { border-bottom: none; }

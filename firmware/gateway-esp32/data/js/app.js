@@ -61,6 +61,8 @@ function showView(view) {
     clearInterval(historyTimer);
     loadConfig();
     loadActionLog();
+    loadEvents();
+    loadSystemInfo();
   } else if (view === 'studio') {
     clearInterval(pollTimer);
     clearInterval(historyTimer);
@@ -1579,3 +1581,152 @@ function esc(s) {
   if (!s) return '';
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+// =====================================================================
+//  Phase 9: Event log
+// =====================================================================
+function loadEvents() {
+  var cat = document.getElementById('event-filter').value;
+  var url = '/api/events?limit=50';
+  if (cat) url += '&cat=' + cat;
+  fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+    var el = document.getElementById('event-log-list');
+    if (!data.events || data.events.length === 0) {
+      el.innerHTML = '<p style="color:var(--muted);font-size:12px">No events recorded.</p>';
+      return;
+    }
+    var html = '';
+    data.events.forEach(function(e) {
+      var mins = Math.floor(e.t / 60);
+      var hrs = Math.floor(mins / 60);
+      var timeStr = hrs > 0 ? (hrs + 'h ' + (mins % 60) + 'm') : (mins + 'm');
+      html += '<div class="event-row">';
+      html += '<span class="event-time">' + timeStr + '</span>';
+      html += '<span class="event-cat">' + esc(e.cat) + '</span>';
+      html += '<span class="event-msg">' + esc(e.msg) + '</span>';
+      html += '</div>';
+    });
+    el.innerHTML = html;
+  });
+}
+
+document.getElementById('load-events-btn').onclick = loadEvents;
+document.getElementById('clear-events-btn').onclick = function() {
+  if (!confirm('Clear all event logs?')) return;
+  fetch('/api/events', { method: 'DELETE' }).then(function() { loadEvents(); });
+};
+document.getElementById('event-filter').onchange = loadEvents;
+
+// =====================================================================
+//  Phase 9: System info
+// =====================================================================
+function loadSystemInfo() {
+  fetch('/api/system').then(function(r) { return r.json(); }).then(function(d) {
+    var upH = Math.floor(d.uptime_s / 3600);
+    var upM = Math.floor((d.uptime_s % 3600) / 60);
+    var flashPct = Math.round(d.flash_used / d.flash_total * 100);
+    var heapKB = Math.round(d.free_heap / 1024);
+    var html = '<div class="sys-grid">';
+    html += '<div class="sys-item"><div class="sys-label">Firmware</div><div class="sys-value">' + esc(d.firmware) + '</div></div>';
+    html += '<div class="sys-item"><div class="sys-label">Uptime</div><div class="sys-value">' + upH + 'h ' + upM + 'm</div></div>';
+    html += '<div class="sys-item"><div class="sys-label">Flash</div><div class="sys-value">' + flashPct + '%</div></div>';
+    html += '<div class="sys-item"><div class="sys-label">Free Heap</div><div class="sys-value">' + heapKB + ' KB</div></div>';
+    html += '<div class="sys-item"><div class="sys-label">Sensors</div><div class="sys-value">' + d.sensors + '</div></div>';
+    html += '<div class="sys-item"><div class="sys-label">Equipment</div><div class="sys-value">' + d.equipment + '</div></div>';
+    html += '<div class="sys-item"><div class="sys-label">Rules</div><div class="sys-value">' + d.rules + '</div></div>';
+    html += '<div class="sys-item"><div class="sys-label">Auth</div><div class="sys-value">' + (d.auth_enabled ? 'On' : 'Off') + '</div></div>';
+    html += '</div>';
+    document.getElementById('system-info').innerHTML = html;
+
+    // Show auth section for technicians (role 2) or when auth is off
+    if (d.my_role >= 2 || !d.auth_enabled) {
+      document.getElementById('auth-section').style.display = '';
+      loadAuth();
+    }
+  });
+}
+document.getElementById('load-system-btn').onclick = loadSystemInfo;
+
+// =====================================================================
+//  Phase 9: Backup & Restore
+// =====================================================================
+document.getElementById('backup-btn').onclick = function() {
+  document.getElementById('backup-status').textContent = 'Downloading...';
+  fetch('/api/config/backup').then(function(r) { return r.json(); }).then(function(data) {
+    var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'lorasense-backup.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+    document.getElementById('backup-status').textContent = 'Backup downloaded.';
+  });
+};
+
+document.getElementById('restore-file').onchange = function(ev) {
+  var file = ev.target.files[0];
+  if (!file) return;
+  if (!confirm('Restore configuration from ' + file.name + '? The gateway will reboot.')) {
+    ev.target.value = '';
+    return;
+  }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    document.getElementById('backup-status').textContent = 'Restoring...';
+    fetch('/api/config/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: e.target.result
+    }).then(function(r) { return r.json(); }).then(function(d) {
+      if (d.ok) {
+        document.getElementById('backup-status').textContent = 'Restored ' + d.restored + ' configs. Rebooting...';
+      } else {
+        document.getElementById('backup-status').textContent = 'Error: ' + (d.error || 'restore failed');
+      }
+    });
+  };
+  reader.readAsText(file);
+  ev.target.value = '';
+};
+
+// =====================================================================
+//  Phase 9: Auth management (technician only)
+// =====================================================================
+function loadAuth() {
+  fetch('/api/auth').then(function(r) {
+    if (r.status === 403 || r.status === 401) {
+      document.getElementById('auth-section').style.display = 'none';
+      return null;
+    }
+    return r.json();
+  }).then(function(d) {
+    if (!d) return;
+    document.getElementById('auth-enabled').checked = d.enabled;
+    var html = '';
+    if (d.users) {
+      d.users.forEach(function(u) {
+        var roleLabel = u.role >= 2 ? 'Technician' : 'User';
+        html += '<div class="auth-user-row">';
+        html += '<strong>' + esc(u.username) + '</strong>';
+        html += '<span style="color:var(--muted)">' + roleLabel + '</span>';
+        html += '<span style="color:var(--muted)">' + (u.active ? 'Active' : 'Disabled') + '</span>';
+        html += '</div>';
+      });
+    }
+    if (!html) html = '<p style="color:var(--muted);font-size:12px">No users configured.</p>';
+    document.getElementById('auth-users').innerHTML = html;
+  });
+}
+
+document.getElementById('save-auth-btn').onclick = function() {
+  var payload = { enabled: document.getElementById('auth-enabled').checked };
+  fetch('/api/auth', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok) loadSystemInfo();
+  });
+};

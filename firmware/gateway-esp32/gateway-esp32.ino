@@ -11,6 +11,7 @@
 #include <ArduinoJson.h>
 #include "secrets.h"
 #include "device.h"
+#include "auth.h"
 #include "config.h"
 #include "hardware.h"
 #include "history.h"
@@ -20,6 +21,8 @@ WebServer server(80);
 ConfigManager config;
 HardwareManager hw;
 SensorHistory history;
+AuthManager auth;
+EventLog eventLog;
 
 // --- LoRa pins ---
 const int PIN_SCK  = 18;
@@ -340,6 +343,7 @@ float applyCalibration(float raw, int16_t offsetX10, uint16_t scaleX100) {
 }
 
 void handleState() {
+  if (!auth.check(server, ROLE_USER)) return;
   if (nodeOnline && millis() - lastNodeHeard > NODE_TIMEOUT_MS)
     nodeOnline = false;
 
@@ -476,6 +480,7 @@ void handleState() {
 //  HTTP: POST /api/devices — control a device by equipment ID
 // =====================================================================
 void handleSetDevice() {
+  if (!auth.check(server, ROLE_USER)) return;
   if (!server.hasArg("id") || !server.hasArg("state")) {
     server.send(400, "application/json", "{\"error\":\"need id and state\"}");
     return;
@@ -515,6 +520,7 @@ void handleSetDevice() {
 //  HTTP: Config API
 // =====================================================================
 void handleGetConfig() {
+  if (!auth.check(server, ROLE_USER)) return;
   JsonDocument doc;
   JsonObject env = doc["environment"].to<JsonObject>();
   env["name"] = config.env.name;
@@ -599,6 +605,7 @@ void handleGetConfig() {
 }
 
 void handleSetEnvironment() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -615,6 +622,7 @@ void handleSetEnvironment() {
 }
 
 void handleAddZone() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -638,6 +646,7 @@ void handleAddZone() {
 }
 
 void handleDeleteZone() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
   String id = server.arg("id");
   if (!id.length()) {
     server.send(400, "application/json", "{\"error\":\"need id\"}");
@@ -673,6 +682,7 @@ void syncSensorPins() {
 }
 
 void handleAddEquipment() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -717,6 +727,7 @@ void handleAddEquipment() {
 }
 
 void handleUpdateEquipment() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -757,6 +768,7 @@ void handleUpdateEquipment() {
 }
 
 void handleDeleteEquipment() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
   String id = server.arg("id");
   if (!id.length()) {
     server.send(400, "application/json", "{\"error\":\"need id\"}");
@@ -774,6 +786,7 @@ void handleDeleteEquipment() {
 //  HTTP: Onboarding — complete first-time setup in one request
 // =====================================================================
 void handleOnboarding() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -830,6 +843,7 @@ void handleOnboarding() {
   bumpConfigVersion();
 
   Serial.println("[Onboarding] Setup complete.");
+  eventLog.add("config", "Onboarding completed");
   server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -846,6 +860,7 @@ const char *commissionName(CommissionStatus s) {
 }
 
 void handleCommission() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -877,6 +892,9 @@ void handleCommission() {
   }
   config.env.commissionStatus = (CommissionStatus)status;
   config.saveEnvironment();
+  char logMsg[64];
+  snprintf(logMsg, sizeof(logMsg), "Status -> %s", commissionName(config.env.commissionStatus));
+  eventLog.add("config", logMsg);
   String resp = "{\"ok\":true,\"status\":\"";
   resp += commissionName(config.env.commissionStatus);
   resp += "\"}";
@@ -887,6 +905,7 @@ void handleCommission() {
 //  HTTP: Rules API
 // =====================================================================
 void handleGetRules() {
+  if (!auth.check(server, ROLE_USER)) return;
   JsonDocument doc;
   JsonArray arr = doc.to<JsonArray>();
   for (int i = 0; i < config.ruleCount; i++) {
@@ -908,6 +927,7 @@ void handleGetRules() {
 }
 
 void handleAddRule() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -944,6 +964,7 @@ void handleAddRule() {
 }
 
 void handleUpdateRule() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -980,6 +1001,7 @@ void handleUpdateRule() {
 }
 
 void handleDeleteRule() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
   String id = server.arg("id");
   if (!id.length()) {
     server.send(400, "application/json", "{\"error\":\"need id\"}");
@@ -996,6 +1018,7 @@ void handleDeleteRule() {
 //  HTTP: GET /api/action-log — recent automation actions
 // =====================================================================
 void handleActionLog() {
+  if (!auth.check(server, ROLE_USER)) return;
   JsonDocument doc;
   JsonArray arr = doc.to<JsonArray>();
   for (int i = 0; i < actionLog.count; i++) {
@@ -1017,6 +1040,7 @@ void handleActionLog() {
 //  HTTP: POST /api/override — toggle manual override for an equipment
 // =====================================================================
 void handleOverride() {
+  if (!auth.check(server, ROLE_USER)) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -1039,6 +1063,9 @@ void handleOverride() {
   bool override = doc["override"] | false;
   outputs[eq->outputIndex].manualOverride = override;
   actionLog.add("--", override ? "OVERRIDE" : "AUTO", eq->name, 0);
+  char logMsg[64];
+  snprintf(logMsg, sizeof(logMsg), "%s: %s", eq->name, override ? "manual override" : "auto resumed");
+  eventLog.add("relay", logMsg);
   server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -1046,6 +1073,7 @@ void handleOverride() {
 //  HTTP: /api/history — sensor reading history
 // =====================================================================
 void handleHistory() {
+  if (!auth.check(server, ROLE_USER)) return;
   String json = "[";
   for (int i = 0; i < history.count; i++) {
     const SensorReading &r = history.at(i);
@@ -1066,6 +1094,7 @@ void handleHistory() {
 //  HTTP: /api/test — on-device self-test
 // =====================================================================
 void handleSelfTest() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
   JsonDocument doc;
   JsonArray results = doc["tests"].to<JsonArray>();
   int pass = 0, fail = 0;
@@ -1122,6 +1151,7 @@ void handleSelfTest() {
 //  HTTP: Sensor API
 // =====================================================================
 void handleGetSensors() {
+  if (!auth.check(server, ROLE_USER)) return;
   JsonDocument doc;
   JsonArray arr = doc.to<JsonArray>();
   for (int i = 0; i < config.sensorCount; i++) {
@@ -1155,6 +1185,7 @@ void handleGetSensors() {
 }
 
 void handleAddSensor() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -1253,6 +1284,7 @@ void handleAddSensor() {
 }
 
 void handleDeleteSensor() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
   String id = server.arg("id");
   if (!id.length()) {
     server.send(400, "application/json", "{\"error\":\"need id\"}");
@@ -1276,6 +1308,7 @@ void ensureDefaultSensor() {
 //  HTTP: Hardware Studio API
 // =====================================================================
 void handleGetNodes() {
+  if (!auth.check(server, ROLE_USER)) return;
   JsonDocument doc;
   JsonArray arr = doc.to<JsonArray>();
   for (int i = 0; i < hw.nodeCount; i++) {
@@ -1297,6 +1330,7 @@ void handleGetNodes() {
 }
 
 void handleGetPins() {
+  if (!auth.check(server, ROLE_USER)) return;
   // Stream pin table as JSON array
   String json = "[";
   char nameBuf[6];
@@ -1330,6 +1364,7 @@ void handleGetPins() {
 }
 
 void handleGetRelays() {
+  if (!auth.check(server, ROLE_USER)) return;
   JsonDocument doc;
   JsonArray arr = doc.to<JsonArray>();
   for (int i = 0; i < MEGA_RELAY_COUNT; i++) {
@@ -1355,6 +1390,7 @@ void handleGetRelays() {
 }
 
 void handleGetDrivers() {
+  if (!auth.check(server, ROLE_USER)) return;
   JsonDocument doc;
   JsonArray arr = doc["drivers"].to<JsonArray>();
   for (int i = 0; i < SENSOR_DRIVER_COUNT; i++) {
@@ -1394,6 +1430,7 @@ void handleGetDrivers() {
 }
 
 void handleAddNode() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -1420,6 +1457,7 @@ void handleAddNode() {
 }
 
 void handleDeleteNode() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
   String id = server.arg("id");
   if (!id.length()) {
     server.send(400, "application/json", "{\"error\":\"need id\"}");
@@ -1471,6 +1509,7 @@ void evaluateRules() {
         r.exceedSince = 0;
         sendOutputCmd(out, false);
         actionLog.add(r.name, "FAULT_OFF", eq->name, 0);
+        { char lm[64]; snprintf(lm, sizeof(lm), "Rule '%s' fault -> %s OFF", r.name, eq->name); eventLog.add("fault", lm); }
         Serial.print("[Auto] Rule '"); Serial.print(r.name);
         Serial.println("' FAULT -> equipment OFF (stale sensor)");
       }
@@ -1521,6 +1560,7 @@ void evaluateRules() {
       r.lastActionAt = now;
       sendOutputCmd(out, true);
       actionLog.add(r.name, "TRIGGER", eq->name, valueX10);
+      { char lm[64]; snprintf(lm, sizeof(lm), "Rule '%s' triggered -> %s ON", r.name, eq->name); eventLog.add("rule", lm); }
       Serial.print("[Auto] Rule '"); Serial.print(r.name);
       Serial.print("' TRIGGERED -> "); Serial.print(eq->name);
       Serial.println(" ON");
@@ -1531,12 +1571,203 @@ void evaluateRules() {
         r.lastActionAt = now;
         sendOutputCmd(out, false);
         actionLog.add(r.name, "RELEASE", eq->name, valueX10);
+        { char lm[64]; snprintf(lm, sizeof(lm), "Rule '%s' released -> %s OFF", r.name, eq->name); eventLog.add("rule", lm); }
         Serial.print("[Auto] Rule '"); Serial.print(r.name);
         Serial.print("' RELEASED -> "); Serial.print(eq->name);
         Serial.println(" OFF");
       }
     }
   }
+}
+
+// =====================================================================
+//  HTTP: GET /api/events — persistent event log
+// =====================================================================
+void handleGetEvents() {
+  if (!auth.check(server, ROLE_USER)) return;
+  String cat = server.arg("cat");
+  int limit = server.arg("limit").toInt();
+  if (limit <= 0 || limit > 100) limit = 50;
+
+  JsonDocument doc;
+  JsonArray arr = doc["events"].to<JsonArray>();
+  eventLog.toJson(arr, cat.length() ? cat.c_str() : nullptr, limit);
+  doc["count"] = arr.size();
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+void handleClearEvents() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
+  eventLog.clear();
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// =====================================================================
+//  HTTP: Config backup & restore (technician only)
+// =====================================================================
+void handleConfigBackup() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
+
+  JsonDocument doc;
+  doc["_backup_v"] = 1;
+  doc["_schema_v"] = CONFIG_SCHEMA_VERSION;
+  doc["_timestamp"] = millis() / 1000;
+
+  const char *files[] = {
+    "/config/env.json", "/config/zones.json", "/config/equipment.json",
+    "/config/sensors.json", "/config/rules.json", "/config/nodes.json"
+  };
+  const char *keys[] = { "env", "zones", "equipment", "sensors", "rules", "nodes" };
+
+  for (int i = 0; i < 6; i++) {
+    if (LittleFS.exists(files[i])) {
+      File f = LittleFS.open(files[i], "r");
+      if (f) {
+        JsonDocument sub;
+        if (deserializeJson(sub, f) == DeserializationError::Ok) {
+          doc[keys[i]] = sub;
+        }
+        f.close();
+      }
+    }
+  }
+
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+  eventLog.add("config", "Config backup downloaded");
+}
+
+void handleConfigRestore() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) {
+    server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+    return;
+  }
+  if (!doc.containsKey("_backup_v")) {
+    server.send(400, "application/json", "{\"error\":\"not a valid backup file\"}");
+    return;
+  }
+  int schemaV = doc["_schema_v"] | 0;
+  if (schemaV > CONFIG_SCHEMA_VERSION) {
+    server.send(400, "application/json", "{\"error\":\"backup from newer firmware version\"}");
+    return;
+  }
+
+  const char *files[] = {
+    "/config/env.json", "/config/zones.json", "/config/equipment.json",
+    "/config/sensors.json", "/config/rules.json", "/config/nodes.json"
+  };
+  const char *keys[] = { "env", "zones", "equipment", "sensors", "rules", "nodes" };
+
+  LittleFS.mkdir("/config");
+  int restored = 0;
+  for (int i = 0; i < 6; i++) {
+    if (doc.containsKey(keys[i])) {
+      File f = LittleFS.open(files[i], "w");
+      if (f) {
+        serializeJson(doc[keys[i]], f);
+        f.close();
+        restored++;
+      }
+    }
+  }
+
+  eventLog.add("config", "Config restored from backup");
+
+  String resp = "{\"ok\":true,\"restored\":";
+  resp += restored;
+  resp += ",\"reboot\":true}";
+  server.send(200, "application/json", resp);
+
+  delay(500);
+  ESP.restart();
+}
+
+// =====================================================================
+//  HTTP: Auth management API (technician only)
+// =====================================================================
+void handleGetAuth() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
+  JsonDocument doc;
+  doc["enabled"] = auth.enabled;
+  JsonArray arr = doc["users"].to<JsonArray>();
+  for (int i = 0; i < auth.count; i++) {
+    JsonObject u = arr.add<JsonObject>();
+    u["username"] = auth.credentials[i].username;
+    u["role"]     = (int)auth.credentials[i].role;
+    u["active"]   = auth.credentials[i].active;
+    // Never expose passwords
+  }
+  AuthRole myRole = auth.identifyRole(server);
+  doc["my_role"] = (int)myRole;
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+void handleSetAuth() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) {
+    server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+    return;
+  }
+
+  if (doc.containsKey("enabled")) {
+    auth.enabled = doc["enabled"] | false;
+  }
+  if (doc.containsKey("users")) {
+    auth.count = 0;
+    JsonArray arr = doc["users"].as<JsonArray>();
+    for (JsonObject u : arr) {
+      if (auth.count >= MAX_CREDENTIALS) break;
+      AuthCredential &c = auth.credentials[auth.count];
+      strlcpy(c.username, u["username"] | "", sizeof(c.username));
+      if (u.containsKey("password")) {
+        strlcpy(c.password, u["password"] | "", sizeof(c.password));
+      }
+      c.role = (AuthRole)(u["role"] | 1);
+      c.active = u["active"] | true;
+      if (c.username[0]) auth.count++;
+    }
+  }
+  auth.save();
+  eventLog.add("auth", "Auth settings updated");
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// =====================================================================
+//  HTTP: GET /api/system — system info for dashboard
+// =====================================================================
+void handleSystemInfo() {
+  if (!auth.check(server, ROLE_USER)) return;
+  JsonDocument doc;
+  doc["firmware"]     = "2.9.0";
+  doc["uptime_s"]     = millis() / 1000;
+  doc["flash_used"]   = LittleFS.usedBytes();
+  doc["flash_total"]  = LittleFS.totalBytes();
+  doc["free_heap"]    = ESP.getFreeHeap();
+  doc["auth_enabled"] = auth.enabled;
+  doc["my_role"]      = (int)auth.identifyRole(server);
+  doc["sensors"]      = config.sensorCount;
+  doc["equipment"]    = config.equipmentCount;
+  doc["rules"]        = config.ruleCount;
+  doc["zones"]        = config.zoneCount;
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
 }
 
 // =====================================================================
@@ -1592,6 +1823,12 @@ void setup() {
   syncSensorPins();
   Serial.print("Nodes: "); Serial.println(hw.nodeCount);
   Serial.print("Sensors: "); Serial.println(config.sensorCount);
+
+  // Auth and event log
+  auth.begin();
+  eventLog.begin();
+  Serial.print("Auth: "); Serial.println(auth.enabled ? "enabled" : "disabled");
+  eventLog.add("system", "Gateway booted");
 
   // Wi-Fi access point
   WiFi.mode(WIFI_AP);
@@ -1655,6 +1892,15 @@ void setup() {
 
   // Self-test
   server.on("/api/test",               HTTP_GET,    handleSelfTest);
+
+  // Phase 9: Commercial readiness
+  server.on("/api/events",             HTTP_GET,    handleGetEvents);
+  server.on("/api/events",             HTTP_DELETE, handleClearEvents);
+  server.on("/api/config/backup",      HTTP_GET,    handleConfigBackup);
+  server.on("/api/config/restore",     HTTP_POST,   handleConfigRestore);
+  server.on("/api/auth",               HTTP_GET,    handleGetAuth);
+  server.on("/api/auth",               HTTP_POST,   handleSetAuth);
+  server.on("/api/system",             HTTP_GET,    handleSystemInfo);
 
   server.onNotFound(handleNotFound);
   server.begin();

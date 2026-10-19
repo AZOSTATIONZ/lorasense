@@ -331,6 +331,57 @@
       <button class="btn-small" id="load-action-log-btn">Refresh</button>
     </section>
 
+    <!-- Event log (persistent) -->
+    <section class="settings-section">
+      <h3>Event Log</h3>
+      <p class="wizard-desc" style="margin:0 0 8px;font-size:12px;color:var(--muted)">Persistent system events (survives reboots)</p>
+      <div class="form-row">
+        <select id="event-filter">
+          <option value="">All events</option>
+          <option value="rule">Rules</option>
+          <option value="relay">Relays</option>
+          <option value="config">Config</option>
+          <option value="auth">Auth</option>
+          <option value="fault">Faults</option>
+          <option value="system">System</option>
+        </select>
+        <button class="btn-small" id="load-events-btn">Refresh</button>
+        <button class="btn-small btn-danger" id="clear-events-btn">Clear</button>
+      </div>
+      <div id="event-log-list"></div>
+    </section>
+
+    <!-- System info -->
+    <section class="settings-section">
+      <h3>System</h3>
+      <div id="system-info"></div>
+      <button class="btn-small" id="load-system-btn">Refresh</button>
+    </section>
+
+    <!-- Backup / Restore -->
+    <section class="settings-section">
+      <h3>Backup &amp; Restore</h3>
+      <p class="wizard-desc" style="margin:0 0 8px;font-size:12px;color:var(--muted)">Download all configuration or restore from a backup file.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn-small" id="backup-btn">Download Backup</button>
+        <label class="btn-small" style="cursor:pointer">Restore from File
+          <input type="file" id="restore-file" accept=".json" style="display:none">
+        </label>
+      </div>
+      <div id="backup-status" style="margin-top:8px;font-size:12px;color:var(--muted)"></div>
+    </section>
+
+    <!-- Auth settings (technician only) -->
+    <section class="settings-section" id="auth-section" style="display:none">
+      <h3>Authentication</h3>
+      <div class="form-row">
+        <label>Enabled</label>
+        <input type="checkbox" id="auth-enabled">
+      </div>
+      <div id="auth-users"></div>
+      <button class="btn-small" id="save-auth-btn">Save Auth</button>
+    </section>
+
     <section class="settings-section">
       <h3>Advanced</h3>
       <button class="btn-small" id="open-studio-btn">Hardware Studio</button>
