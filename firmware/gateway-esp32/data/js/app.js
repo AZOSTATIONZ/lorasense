@@ -1387,23 +1387,66 @@ function renderPinTable(pins) {
 document.getElementById('pin-search').oninput = function() { if (window._pinData) renderPinTable(window._pinData); };
 document.getElementById('pin-filter').onchange = function() { if (window._pinData) renderPinTable(window._pinData); };
 
+var BUS_NAMES = {0: 'None', 1: 'GPIO', 2: 'I2C', 3: 'Analog'};
+
 function loadDrivers() {
   fetch('/api/hw/drivers').then(function(r){return r.json();}).then(function(data){
     var drivers = Array.isArray(data) ? data : (data.drivers || []);
     window._driverData = drivers;
+
+    var supported = drivers.filter(function(d){ return d.supported; });
+    var planned   = drivers.filter(function(d){ return !d.supported; });
+
     var el = document.getElementById('driver-list');
-    el.innerHTML = drivers.map(function(d){
-      var meta = d.quantity ? '<small style="color:var(--muted)"> · ' + esc(d.quantity) +
-        (d.unit ? ' (' + esc(d.unit) + ')' : '') +
-        (d.max_per_node ? ' · max ' + d.max_per_node + '/node' : '') + '</small>' : '';
-      return '<div class="driver-card">' +
-        '<div class="driver-info"><h4>' + esc(d.name) + meta + '</h4><p>' + esc(d.desc) + '</p></div>' +
-        '<span class="driver-badge ' + (d.supported ? 'ok' : 'na') + '">' +
-          (d.supported ? 'Supported' : 'Not yet') +
-        '</span></div>';
-    }).join('');
+    var html = '';
+
+    if (supported.length) {
+      html += '<div class="driver-section-label">Ready to use — add instances from the sensor form above</div>';
+      html += supported.map(function(d){ return renderDriverCard(d); }).join('');
+    }
+
+    if (planned.length) {
+      html += '<div class="driver-section-label" style="margin-top:16px">' +
+        'Planned — requires firmware and hardware work before commissioning</div>';
+      html += planned.map(function(d){ return renderDriverCard(d); }).join('');
+    }
+
+    el.innerHTML = html;
     updateSensorPinOptions();
   });
+}
+
+function renderDriverCard(d) {
+  var meta = d.quantity ? '<small style="color:var(--muted)"> · ' + esc(d.quantity) +
+    (d.unit ? ' (' + esc(d.unit) + ')' : '') +
+    (d.max_per_node ? ' · max ' + d.max_per_node + '/node' : '') + '</small>' : '';
+
+  var details = '<div class="driver-details">';
+  details += '<span>Bus: ' + (BUS_NAMES[d.bus] || '?') + '</span>';
+  if (d.fw_min) details += '<span>Min FW: v' + esc(d.fw_min) + '</span>';
+  if (d.driver_ver) details += '<span>Def v' + d.driver_ver + '</span>';
+  if (d.range_min !== undefined) {
+    details += '<span>Range: ' + (d.range_min/10) + ' – ' + (d.range_max/10) +
+      (d.unit ? ' ' + esc(d.unit) : '') + '</span>';
+  }
+  details += '</div>';
+
+  var reqHtml = '';
+  if (!d.supported) {
+    reqHtml = '<div class="driver-requirements">';
+    if (d.hw_req) reqHtml += '<div class="req-item"><strong>Hardware:</strong> ' + esc(d.hw_req) + '</div>';
+    if (d.dev_note) reqHtml += '<div class="req-item"><strong>Firmware:</strong> ' + esc(d.dev_note) + '</div>';
+    reqHtml += '</div>';
+  } else if (d.hw_req) {
+    reqHtml = '<div class="driver-hw-note">' + esc(d.hw_req) + '</div>';
+  }
+
+  return '<div class="driver-card' + (d.supported ? '' : ' driver-planned') + '">' +
+    '<div class="driver-info"><h4>' + esc(d.name) + meta + '</h4>' +
+    '<p>' + esc(d.desc) + '</p>' + details + reqHtml + '</div>' +
+    '<span class="driver-badge ' + (d.supported ? 'ok' : 'na') + '">' +
+      (d.supported ? 'Supported' : 'Engineering required') +
+    '</span></div>';
 }
 
 function loadSensors() {

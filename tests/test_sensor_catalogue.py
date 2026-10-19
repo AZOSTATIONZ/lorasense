@@ -130,18 +130,39 @@ LIMIT_ONE  = 1
 LIMIT_MANY = 16
 
 # Sensor driver registry (mirrors SENSOR_DRIVERS[] from hardware.h)
-STYPE_DHT11  = 1
-STYPE_DHT22  = 2
-STYPE_BME280 = 3
-STYPE_DS18B20= 4
-STYPE_ANALOG = 5
+STYPE_DHT11     = 1
+STYPE_DHT22     = 2
+STYPE_BME280    = 3
+STYPE_DS18B20   = 4
+STYPE_ANALOG    = 5
+STYPE_VOLTAGE   = 6
+STYPE_CURRENT   = 7
+STYPE_WATER_LVL = 8
+STYPE_PRESSURE  = 9
+STYPE_SOIL      = 10
+STYPE_FLOW      = 11
+STYPE_CONTACT   = 12
 
 DRIVER_LIMITS = {
-    STYPE_DHT11:   LIMIT_ONE,
-    STYPE_DHT22:   LIMIT_ONE,
-    STYPE_BME280:  LIMIT_ONE,
-    STYPE_DS18B20: LIMIT_MANY,
-    STYPE_ANALOG:  LIMIT_ONE,
+    STYPE_DHT11:     LIMIT_ONE,
+    STYPE_DHT22:     LIMIT_ONE,
+    STYPE_BME280:    LIMIT_ONE,
+    STYPE_DS18B20:   LIMIT_MANY,
+    STYPE_ANALOG:    LIMIT_ONE,
+    STYPE_VOLTAGE:   LIMIT_MANY,
+    STYPE_CURRENT:   LIMIT_MANY,
+    STYPE_WATER_LVL: LIMIT_MANY,
+    STYPE_PRESSURE:  LIMIT_ONE,
+    STYPE_SOIL:      LIMIT_MANY,
+    STYPE_FLOW:      LIMIT_MANY,
+    STYPE_CONTACT:   LIMIT_MANY,
+}
+
+DRIVER_SUPPORTED = {
+    STYPE_DHT11: True, STYPE_DHT22: True, STYPE_ANALOG: True,
+    STYPE_BME280: False, STYPE_DS18B20: False,
+    STYPE_VOLTAGE: False, STYPE_CURRENT: False, STYPE_WATER_LVL: False,
+    STYPE_PRESSURE: False, STYPE_SOIL: False, STYPE_FLOW: False, STYPE_CONTACT: False,
 }
 
 def count_on_node(sensors, stype, node_id):
@@ -194,6 +215,62 @@ check("cannot add 17th DS18B20",
 inactive_dht = [{'type': STYPE_DHT11, 'node_id': 'mega-001', 'active': False}]
 check("inactive sensor does not block",
       can_add_sensor(inactive_dht, STYPE_DHT11, "mega-001"))
+
+# --- Phase 8: expanded catalogue tests ---
+
+# New LIMIT_MANY types can add multiple instances
+check("can add voltage sensor to empty node",
+      can_add_sensor([], STYPE_VOLTAGE, "mega-001"))
+
+multi_voltage = [{'type': STYPE_VOLTAGE, 'node_id': 'mega-001', 'active': True} for _ in range(3)]
+check("can add 4th voltage sensor",
+      can_add_sensor(multi_voltage, STYPE_VOLTAGE, "mega-001"))
+
+# Pressure is LIMIT_ONE
+check("can add pressure to empty node",
+      can_add_sensor([], STYPE_PRESSURE, "mega-001"))
+existing_pressure = [{'type': STYPE_PRESSURE, 'node_id': 'mega-001', 'active': True}]
+check("cannot add second pressure",
+      not can_add_sensor(existing_pressure, STYPE_PRESSURE, "mega-001"))
+
+# Contact sensors — many per node
+contacts = [{'type': STYPE_CONTACT, 'node_id': 'mega-001', 'active': True} for _ in range(8)]
+check("can add 9th contact sensor",
+      can_add_sensor(contacts, STYPE_CONTACT, "mega-001"))
+
+# Soil moisture — many per node
+check("can add soil sensor to empty node",
+      can_add_sensor([], STYPE_SOIL, "mega-001"))
+
+# Flow sensor — many per node, needs interrupt pin
+check("can add flow sensor to empty node",
+      can_add_sensor([], STYPE_FLOW, "mega-001"))
+
+# Supported vs unsupported distinction
+check("DHT11 is supported", DRIVER_SUPPORTED[STYPE_DHT11])
+check("DHT22 is supported", DRIVER_SUPPORTED[STYPE_DHT22])
+check("Analog is supported", DRIVER_SUPPORTED[STYPE_ANALOG])
+check("BME280 is not supported", not DRIVER_SUPPORTED[STYPE_BME280])
+check("DS18B20 is not supported", not DRIVER_SUPPORTED[STYPE_DS18B20])
+check("Voltage is not supported", not DRIVER_SUPPORTED[STYPE_VOLTAGE])
+check("Current is not supported", not DRIVER_SUPPORTED[STYPE_CURRENT])
+check("Water level is not supported", not DRIVER_SUPPORTED[STYPE_WATER_LVL])
+check("Pressure is not supported", not DRIVER_SUPPORTED[STYPE_PRESSURE])
+check("Soil is not supported", not DRIVER_SUPPORTED[STYPE_SOIL])
+check("Flow is not supported", not DRIVER_SUPPORTED[STYPE_FLOW])
+check("Contact is not supported", not DRIVER_SUPPORTED[STYPE_CONTACT])
+
+# All defined types have a limit entry
+check("all types have limits",
+      all(t in DRIVER_LIMITS for t in DRIVER_SUPPORTED))
+
+# All defined types have a supported entry
+check("all types have supported flag",
+      all(t in DRIVER_SUPPORTED for t in DRIVER_LIMITS))
+
+# Limit values are sensible
+for stype, limit in DRIVER_LIMITS.items():
+    check(f"type {stype} limit > 0", limit > 0)
 
 
 # =====================================================================

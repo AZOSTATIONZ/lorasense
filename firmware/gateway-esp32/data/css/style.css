@@ -339,6 +339,9 @@ button:disabled { opacity: 0.5; cursor: wait; }
 }
 @media (prefers-color-scheme: dark) {
   .safety-note { background: #422006; border-color: #92400e; }
+  .driver-badge.ok { background: #052e16; color: #4ade80; }
+  .driver-badge.na { background: #422006; color: #fbbf24; }
+  .driver-requirements { background: var(--card); border: 1px solid var(--border); }
 }
 .add-rule-form {
   margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);
@@ -465,10 +468,35 @@ button:disabled { opacity: 0.5; cursor: wait; }
 .driver-card .driver-info h4 { margin: 0; font-size: 14px; }
 .driver-card .driver-info p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
 .driver-badge {
-  font-size: 11px; padding: 3px 10px; border-radius: 10px; font-weight: 500;
+  font-size: 11px; padding: 3px 10px; border-radius: var(--radius-sm); font-weight: 500;
+  white-space: nowrap;
 }
 .driver-badge.ok { background: #d4edda; color: #155724; }
-.driver-badge.na { background: var(--bg-card); color: var(--muted); }
+.driver-badge.na { background: #fff3cd; color: #856404; }
+.driver-section-label {
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 4px 0; margin-bottom: 4px;
+}
+.driver-card.driver-planned {
+  opacity: 0.85; border-left: 3px solid var(--pending);
+}
+.driver-details {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px;
+  font-size: 11px; color: var(--muted);
+}
+.driver-details span {
+  background: var(--bg); padding: 2px 6px; border-radius: var(--radius-sm);
+}
+.driver-requirements {
+  margin-top: 8px; padding: 8px; background: var(--accent-soft);
+  border-radius: var(--radius-sm); font-size: 12px;
+}
+.driver-requirements .req-item { margin-bottom: 4px; }
+.driver-requirements .req-item:last-child { margin-bottom: 0; }
+.driver-hw-note {
+  margin-top: 4px; font-size: 11px; color: var(--muted); font-style: italic;
+}
 .add-sensor-form {
   margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);
 }

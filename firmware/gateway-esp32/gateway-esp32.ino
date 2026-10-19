@@ -1370,7 +1370,12 @@ void handleGetDrivers() {
     obj["quantity"]  = d.quantity;
     obj["unit"]      = d.unit;
     obj["max_per_node"] = (int)d.maxPerNode;
+    obj["driver_ver"]   = d.driverVersion;
+    obj["fw_min"]       = d.fwMinVersion;
+    if (d.hwRequirements) obj["hw_req"] = d.hwRequirements;
     if (d.devNote) obj["dev_note"] = d.devNote;
+    obj["range_min"] = d.rangeMinX10;
+    obj["range_max"] = d.rangeMaxX10;
   }
   JsonArray expArr = doc["expansion"].to<JsonArray>();
   for (int i = 0; i < EXPANSION_MODULE_COUNT; i++) {
