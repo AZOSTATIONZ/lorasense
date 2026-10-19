@@ -227,6 +227,84 @@ check("below: 18.5°C stays triggered (hysteresis)", evaluate_rule(185, 180, 10,
 check("below: 19°C stays triggered (at boundary)", evaluate_rule(190, 180, 10, 1, True))
 check("below: 19.1°C releases", not evaluate_rule(191, 180, 10, 1, True))
 
+# Analog sensor rules — percentage (0-100.0% mapped to 0-1000 x10)
+# "Above 50% with 5% hysteresis" — e.g. light level trigger
+check("analog above: 49% doesn't trigger", not evaluate_rule(490, 500, 50, 0, False))
+check("analog above: 51% triggers", evaluate_rule(510, 500, 50, 0, False))
+check("analog above: 46% stays triggered", evaluate_rule(460, 500, 50, 0, True))
+check("analog above: 44.9% releases", not evaluate_rule(449, 500, 50, 0, True))
+
+# "Below 30% with 3% hysteresis" — e.g. soil moisture irrigation
+check("analog below: 31% doesn't trigger", not evaluate_rule(310, 300, 30, 1, False))
+check("analog below: 29% triggers", evaluate_rule(290, 300, 30, 1, False))
+check("analog below: 32% stays triggered", evaluate_rule(320, 300, 30, 1, True))
+check("analog below: 33.1% releases", not evaluate_rule(331, 300, 30, 1, True))
+
+
+# =====================================================================
+#  Analog ADC-to-percentage conversion (mirrors gateway C code)
+# =====================================================================
+print("\n=== Analog ADC Conversion ===")
+
+def adc_to_pct_x10(adc_raw):
+    """Mirrors: valueX10 = (int16_t)(nodeAnalogValue * 1000L / 1023)"""
+    return int(adc_raw * 1000 // 1023)
+
+check("ADC 0 = 0.0%", adc_to_pct_x10(0) == 0)
+check("ADC 1023 = 100.0%", adc_to_pct_x10(1023) == 1000)
+check("ADC 512 ~ 50.0%", abs(adc_to_pct_x10(512) - 500) <= 5)
+check("ADC 256 ~ 25.0%", abs(adc_to_pct_x10(256) - 250) <= 5)
+
+
+# =====================================================================
+#  Extended telemetry — 8-byte payload with analog fields
+# =====================================================================
+print("\n=== Extended Telemetry (Phase 9) ===")
+
+# Build an extended telemetry frame (8 bytes: temp + hum + relays + analog_value + analog_pin)
+ext_telem = struct.pack("<hhBhB", 331, 122, 0b0001, 512, 54)  # 33.1°C, 12.2%, relay0 on, ADC=512, pin A0
+ext_frame = build_frame(ADDR_GATEWAY, ADDR_NODE1, MSG_TELEMETRY, 10, ext_telem)
+check("extended telemetry validates", validate_frame(ext_frame))
+check("extended telemetry length", len(ext_frame) == HEADER_SIZE + 8 + CRC_SIZE)
+
+# Parse back
+ext_body = ext_frame[HEADER_SIZE:-CRC_SIZE]
+t10, h10, relays, analog_val, analog_pin = struct.unpack("<hhBhB", ext_body)
+check("ext telem temp", t10 == 331)
+check("ext telem humidity", h10 == 122)
+check("ext telem relays", relays == 0b0001)
+check("ext telem analog value", analog_val == 512)
+check("ext telem analog pin", analog_pin == 54)
+
+# Old 5-byte telemetry still valid (backward compat)
+old_telem = struct.pack("<hhB", 245, 655, 0b0101)
+old_frame = build_frame(ADDR_GATEWAY, ADDR_NODE1, MSG_TELEMETRY, 8, old_telem)
+check("old 5-byte telemetry still valid", validate_frame(old_frame))
+check("old telemetry length", len(old_frame) == HEADER_SIZE + 5 + CRC_SIZE)
+
+
+# =====================================================================
+#  Config sync frame
+# =====================================================================
+print("\n=== Config Sync Frame ===")
+
+MSG_CONFIG_PUSH = 0x60
+MSG_CONFIG_ACK  = 0x61
+CFG_FULL_SYNC   = 0x01
+
+# Build a CFG_FULL_SYNC push frame
+# ConfigPushPayload: configType(1) + data(8) + dataLen(1) = 10 bytes
+cfg_data = bytes([0, 1, 7, 0xFF, 0, 10, 0, 60])  # v0, DHT11, pin7, no analog, 10s telem, 60s failsafe
+cfg_payload = struct.pack("B", CFG_FULL_SYNC) + cfg_data + struct.pack("B", 8)
+cfg_frame = build_frame(ADDR_NODE1, ADDR_GATEWAY, MSG_CONFIG_PUSH, 5, cfg_payload)
+check("config push validates", validate_frame(cfg_frame))
+
+# Config ACK frame
+ack_payload = struct.pack("BB", CFG_FULL_SYNC, 0)  # ack type + version
+ack_frame = build_frame(ADDR_GATEWAY, ADDR_NODE1, MSG_CONFIG_ACK, 5, ack_payload)
+check("config ack validates", validate_frame(ack_frame))
+check("config ack length", len(ack_frame) == HEADER_SIZE + 2 + CRC_SIZE)
+
 
 # =====================================================================
 #  Summary
