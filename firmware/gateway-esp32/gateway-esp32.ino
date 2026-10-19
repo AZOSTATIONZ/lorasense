@@ -312,6 +312,30 @@ void processPendingCommands() {
 // =====================================================================
 //  HTTP: /api/state — dashboard polling endpoint
 // =====================================================================
+// Determine measurement quality for a sensor reading
+MeasureQuality measureQuality(bool hasReading, uint32_t ageMs, float value,
+                               int16_t minX10, int16_t maxX10) {
+  if (!hasReading) return MQ_MISSING;
+  if (isnan(value) || (int16_t)(value * 10) < minX10 || (int16_t)(value * 10) > maxX10)
+    return MQ_INVALID;
+  if (ageMs > HISTORY_INTERVAL_MS * 2) return MQ_STALE;  // >10 min = stale
+  return MQ_FRESH;
+}
+
+const char *qualityName(MeasureQuality q) {
+  switch (q) {
+    case MQ_FRESH:   return "fresh";
+    case MQ_STALE:   return "stale";
+    case MQ_INVALID: return "invalid";
+    default:         return "missing";
+  }
+}
+
+// Apply calibration: result = (raw × scale/100) + offset/10
+float applyCalibration(float raw, int16_t offsetX10, uint16_t scaleX100) {
+  return (raw * scaleX100 / 100.0f) + (offsetX10 / 10.0f);
+}
+
 void handleState() {
   if (nodeOnline && millis() - lastNodeHeard > NODE_TIMEOUT_MS)
     nodeOnline = false;
@@ -367,33 +391,52 @@ void handleState() {
     doc["env_type"] = config.env.type;
   }
 
-  // Configured sensors with live readings
+  // Configured sensors with live readings, calibration, and quality
   JsonArray sensArr = doc["sensors"].to<JsonArray>();
+  uint32_t telemetryAge = (lastTelemetryAt > 0) ? (millis() - lastTelemetryAt) : UINT32_MAX;
   for (int i = 0; i < config.sensorCount; i++) {
     SensorInstance &si = config.sensors[i];
     if (!si.active || !si.enabled) continue;
     JsonObject so = sensArr.add<JsonObject>();
     so["id"]   = si.id;
     so["name"] = si.name;
+    if (si.label[0]) so["label"] = si.label;
     so["type"] = si.sensorType;
     so["connected"] = nodeOnline;
+
+    const SensorDriver *drv = nullptr;
     for (int d = 0; d < SENSOR_DRIVER_COUNT; d++) {
       if (SENSOR_DRIVERS[d].type == si.sensorType) {
-        so["driver"] = SENSOR_DRIVERS[d].name;
+        drv = &SENSOR_DRIVERS[d];
+        so["driver"]   = drv->name;
+        so["quantity"] = drv->quantity;
+        so["unit"]     = drv->unit;
         break;
       }
     }
+
     if (si.sensorType == STYPE_DHT11 || si.sensorType == STYPE_DHT22) {
       JsonObject rd = so["readings"].to<JsonObject>();
-      if (nodeOnline) {
-        rd["temperature_c"] = serialized(String(nodeTemperature, 1));
+      bool hasReading = nodeOnline && lastTelemetryAt > 0;
+      float calTemp = applyCalibration(nodeTemperature, si.offsetX10, si.scaleX100);
+      MeasureQuality tq = measureQuality(hasReading, telemetryAge, nodeTemperature,
+                            drv ? drv->rangeMinX10 : -400, drv ? drv->rangeMaxX10 : 800);
+      MeasureQuality hq = measureQuality(hasReading, telemetryAge, nodeHumidity, 0, 1000);
+      so["quality"] = qualityName(tq < hq ? hq : tq);  // worst of the two
+      if (hasReading) {
+        rd["temperature_c"] = serialized(String(calTemp, 1));
         rd["humidity_pct"]  = serialized(String(nodeHumidity, 1));
       }
     } else if (si.sensorType == STYPE_ANALOG) {
       JsonObject rd = so["readings"].to<JsonObject>();
-      if (nodeOnline && nodeAnalogValue >= 0) {
+      bool hasReading = nodeOnline && nodeAnalogValue >= 0;
+      MeasureQuality aq = measureQuality(hasReading, telemetryAge,
+                            (float)nodeAnalogValue, 0, 10230);
+      so["quality"] = qualityName(aq);
+      if (hasReading) {
+        float calAnalog = applyCalibration(nodeAnalogValue / 10.23f, si.offsetX10, si.scaleX100);
         rd["analog_raw"] = nodeAnalogValue;
-        rd["analog_pct"] = serialized(String(nodeAnalogValue / 10.23, 1));
+        rd["analog_pct"] = serialized(String(calAnalog, 1));
       }
     }
   }
@@ -972,11 +1015,14 @@ void handleAddSensor() {
   }
   const char *id     = doc["id"] | "";
   const char *name   = doc["name"] | "";
+  const char *label  = doc["label"] | "";
   uint8_t type       = doc["type"] | 0;
   const char *nodeId = doc["node_id"] | "mega-001";
   uint8_t pin        = doc["pin"] | 0xFF;
   const char *zoneId = doc["zone_id"] | "";
   bool enabled       = doc["enabled"] | true;
+  int16_t calOffset  = doc["cal_offset"] | (int16_t)0;
+  uint16_t calScale  = doc["cal_scale"]  | (uint16_t)100;
 
   if (!id[0] || !name[0]) {
     server.send(400, "application/json", "{\"error\":\"need id and name\"}");
@@ -986,11 +1032,13 @@ void handleAddSensor() {
   bool typeFound = false;
   bool typeSupported = false;
   uint8_t pinReq = 0;
+  uint8_t maxPerNode = 1;
   for (int d = 0; d < SENSOR_DRIVER_COUNT; d++) {
     if (SENSOR_DRIVERS[d].type == type) {
       typeFound = true;
       typeSupported = SENSOR_DRIVERS[d].supported;
       pinReq = SENSOR_DRIVERS[d].pinRequirement;
+      maxPerNode = SENSOR_DRIVERS[d].maxPerNode;
       break;
     }
   }
@@ -1030,7 +1078,21 @@ void handleAddSensor() {
       return;
     }
   }
-  if (!config.addSensor(id, name, type, nodeId, pin, zoneId, enabled)) {
+  // Check instance limit per node for this sensor type
+  uint8_t countOnNode = 0;
+  for (int i = 0; i < config.sensorCount; i++) {
+    if (config.sensors[i].active &&
+        config.sensors[i].sensorType == type &&
+        strcmp(config.sensors[i].nodeId, nodeId) == 0)
+      countOnNode++;
+  }
+  if (countOnNode >= maxPerNode) {
+    server.send(409, "application/json",
+      "{\"error\":\"this node already has the maximum number of this sensor type\"}");
+    return;
+  }
+  if (!config.addSensor(id, name, type, nodeId, pin, zoneId, enabled,
+                         label, calOffset, calScale)) {
     server.send(409, "application/json", "{\"error\":\"sensor exists or limit reached\"}");
     return;
   }

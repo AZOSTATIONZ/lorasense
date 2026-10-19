@@ -94,19 +94,27 @@ function drawSensorHero(s) {
     }
 
     var readings = meta.readings;
+    var quality = sen.quality || 'missing';
+    var qClass = quality === 'fresh' ? '' : quality === 'stale' ? ' stale' : ' stale';
+    var sensorLabel = sen.label || sen.name;
     for (var r = 0; r < readings.length; r++) {
       var rd = readings[r];
       var val = '--';
       var sub = '';
       if (!sen.connected) {
         sub = '<div class="hero-sub disconnected">Disconnected</div>';
-      } else if (sen.readings && sen.readings[rd.key] !== undefined) {
+      } else if (quality === 'invalid') {
+        sub = '<div class="hero-sub disconnected">Invalid reading</div>';
+      } else if (quality === 'stale') {
+        sub = '<div class="hero-sub disconnected">Stale</div>';
+      }
+      if (sen.readings && sen.readings[rd.key] !== undefined) {
         val = parseFloat(sen.readings[rd.key]).toFixed(rd.decimals);
       }
-      html += '<div class="hero-card' + (!sen.connected ? ' stale' : '') + '">' +
+      html += '<div class="hero-card' + qClass + '">' +
         '<div class="hero-icon">' + rd.icon + '</div>' +
         '<div class="hero-value">' + val + '<span style="font-size:18px;font-weight:400">' + rd.unit + '</span></div>' +
-        '<div class="hero-label">' + rd.label + '</div>' +
+        '<div class="hero-label">' + escHtml(sensorLabel) + ' — ' + rd.label + '</div>' +
         sub +
       '</div>';
     }

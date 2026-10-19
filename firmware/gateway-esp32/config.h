@@ -39,14 +39,25 @@ struct Equipment {
   bool    active;          // whether this record is in use
 };
 
+// Measurement quality — how trustworthy is the current reading?
+enum MeasureQuality : uint8_t {
+  MQ_FRESH   = 0,  // received within expected interval
+  MQ_STALE   = 1,  // older than 2× the reporting interval
+  MQ_INVALID = 2,  // sensor reports out-of-range or NaN
+  MQ_MISSING = 3,  // no reading ever received
+};
+
 // --- Sensor instance — a configured sensor in this installation ---
 struct SensorInstance {
   char    id[ID_LEN];
   char    name[NAME_LEN];
+  char    label[NAME_LEN]; // user-facing label, e.g. "Soil probe #1"
   uint8_t sensorType;      // SensorType enum value
   char    nodeId[ID_LEN];  // controller node
   uint8_t pin;             // assigned pin (0xFF = bus device, no pin)
   char    zoneId[ID_LEN];
+  int16_t offsetX10;       // calibration offset × 10 (added to raw reading)
+  uint16_t scaleX100;      // calibration scale × 100 (100 = 1.00, no scaling)
   bool    enabled;
   bool    active;          // whether this record slot is in use
 };
@@ -316,10 +327,13 @@ public:
       SensorInstance &s = sensors[sensorCount];
       strlcpy(s.id, obj["id"] | "", ID_LEN);
       strlcpy(s.name, obj["name"] | "", NAME_LEN);
+      strlcpy(s.label, obj["label"] | "", NAME_LEN);
       s.sensorType = obj["type"] | 0;
       strlcpy(s.nodeId, obj["node_id"] | "mega-001", ID_LEN);
       s.pin = obj["pin"] | 0xFF;
       strlcpy(s.zoneId, obj["zone_id"] | "", ID_LEN);
+      s.offsetX10  = obj["cal_offset"] | (int16_t)0;
+      s.scaleX100  = obj["cal_scale"]  | (uint16_t)100;
       s.enabled = obj["enabled"] | true;
       s.active = true;
       sensorCount++;
@@ -340,10 +354,13 @@ public:
       JsonObject obj = arr.add<JsonObject>();
       obj["id"]      = s.id;
       obj["name"]    = s.name;
+      if (s.label[0]) obj["label"] = s.label;
       obj["type"]    = s.sensorType;
       obj["node_id"] = s.nodeId;
       if (s.pin != 0xFF) obj["pin"] = s.pin;
       obj["zone_id"] = s.zoneId;
+      if (s.offsetX10 != 0)   obj["cal_offset"] = s.offsetX10;
+      if (s.scaleX100 != 100) obj["cal_scale"]  = s.scaleX100;
       obj["enabled"] = s.enabled;
     }
     serializeJson(doc, f);
@@ -370,16 +387,20 @@ public:
   }
 
   bool addSensor(const char *id, const char *name, uint8_t type,
-                 const char *nodeId, uint8_t pin, const char *zoneId, bool enabled) {
+                 const char *nodeId, uint8_t pin, const char *zoneId, bool enabled,
+                 const char *label = "", int16_t offsetX10 = 0, uint16_t scaleX100 = 100) {
     if (sensorCount >= MAX_SENSORS) return false;
     if (findSensor(id)) return false;
     SensorInstance &s = sensors[sensorCount];
     strlcpy(s.id, id, ID_LEN);
     strlcpy(s.name, name, NAME_LEN);
+    strlcpy(s.label, label, NAME_LEN);
     s.sensorType = type;
     strlcpy(s.nodeId, nodeId, ID_LEN);
     s.pin = pin;
     strlcpy(s.zoneId, zoneId, ID_LEN);
+    s.offsetX10  = offsetX10;
+    s.scaleX100  = scaleX100;
     s.enabled = enabled;
     s.active = true;
     sensorCount++;

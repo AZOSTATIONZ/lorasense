@@ -137,6 +137,12 @@ enum BusType : uint8_t {
   BUS_ANALOG = 3,
 };
 
+// How many instances of this sensor type one node can support
+enum InstanceLimit : uint8_t {
+  LIMIT_ONE  = 1,   // only one per node (e.g. DHT occupies the single DHT slot)
+  LIMIT_MANY = 16,  // limited by available pins
+};
+
 struct SensorDriver {
   SensorType type;
   const char *name;
@@ -146,26 +152,37 @@ struct SensorDriver {
   uint8_t    pinRequirement;  // CAP_ flag the pin must have
   bool       supported;       // driver exists in firmware
   const char *devNote;        // what's needed if not supported
+  // Measurement metadata
+  const char *quantity;       // e.g. "temperature", "humidity", "analog"
+  const char *unit;           // default display unit
+  int16_t    rangeMinX10;     // minimum measurement × 10
+  int16_t    rangeMaxX10;     // maximum measurement × 10
+  InstanceLimit maxPerNode;   // how many of this type one node supports
 };
 
 const SensorDriver SENSOR_DRIVERS[] = {
   { STYPE_DHT11,   "DHT11",
     "Temperature & Humidity (±2°C, ±5%RH)",
-    BUS_GPIO, 1, CAP_DI, true, nullptr },
+    BUS_GPIO, 1, CAP_DI, true, nullptr,
+    "temperature+humidity", "°C", 0, 500, LIMIT_ONE },
   { STYPE_DHT22,   "DHT22",
     "Temperature & Humidity (±0.5°C, ±2%RH)",
-    BUS_GPIO, 1, CAP_DI, true, nullptr },
+    BUS_GPIO, 1, CAP_DI, true, nullptr,
+    "temperature+humidity", "°C", -400, 800, LIMIT_ONE },
   { STYPE_BME280,  "BME280",
     "Temperature, Humidity & Pressure",
     BUS_I2C, 0, 0, false,
-    "Add Adafruit BME280 library; extend telemetry payload" },
+    "Add Adafruit BME280 library; extend telemetry payload",
+    "temperature+humidity+pressure", "°C", -400, 850, LIMIT_ONE },
   { STYPE_DS18B20, "DS18B20",
     "Waterproof temperature probe (±0.5°C)",
     BUS_GPIO, 1, CAP_DI, false,
-    "Add OneWire + DallasTemperature libraries" },
+    "Add OneWire + DallasTemperature libraries",
+    "temperature", "°C", -550, 1250, LIMIT_MANY },
   { STYPE_ANALOG,  "Analog sensor",
     "Generic analog input (soil moisture, light, etc.)",
-    BUS_ANALOG, 1, CAP_AI, true, nullptr },
+    BUS_ANALOG, 1, CAP_AI, true, nullptr,
+    "analog", "%", 0, 1000, LIMIT_ONE },
 };
 const int SENSOR_DRIVER_COUNT = sizeof(SENSOR_DRIVERS) / sizeof(SENSOR_DRIVERS[0]);
 
