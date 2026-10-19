@@ -391,7 +391,7 @@ function sparklineSvg(key) {
     if (pts[i][field] > vMax) vMax = pts[i][field];
   }
   var range = vMax - vMin || 1;
-  var w = 80, h = 24;
+  var w = 80, h = 18;
   var coords = [];
   for (var i = 0; i < pts.length; i++) {
     var x = (i / (pts.length - 1)) * w;
