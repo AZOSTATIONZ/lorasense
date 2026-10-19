@@ -33,16 +33,124 @@ function setThemeOverride(val) {
   try { if (val) localStorage.setItem('ls_theme', val); else localStorage.removeItem('ls_theme'); } catch(e) {}
 }
 
-// Profile terminology per environment type
-var PROFILE_TERMS = {
-  home:       { zone: 'Room', zones: 'Rooms', sensor: 'Sensor', equipment: 'Device' },
-  farm:       { zone: 'Field', zones: 'Fields', sensor: 'Sensor', equipment: 'Equipment' },
-  greenhouse: { zone: 'Bay', zones: 'Bays', sensor: 'Sensor', equipment: 'Equipment' },
-  industrial: { zone: 'Area', zones: 'Areas', sensor: 'Instrument', equipment: 'Asset' },
-  lab:        { zone: 'Station', zones: 'Stations', sensor: 'Instrument', equipment: 'Apparatus' },
-  custom:     { zone: 'Zone', zones: 'Zones', sensor: 'Sensor', equipment: 'Equipment' }
+// SVG icon helpers — returns inline SVG markup, sized to 1em by default
+function svgWrap(inner, cls) {
+  return '<svg class="ls-icon' + (cls ? ' ' + cls : '') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + inner + '</svg>';
+}
+var ICO = {
+  thermometer: function(){ return svgWrap('<path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/>'); },
+  droplet:     function(){ return svgWrap('<path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>'); },
+  gauge:       function(){ return svgWrap('<path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 0 1 0 4h-.09c-.658.003-1.25.396-1.51 1z"/>'); },
+  sun:         function(){ return svgWrap('<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>'); },
+  fan:         function(){ return svgWrap('<path d="M12 12c-1.5-3-4-5.5-7-5.5a5 5 0 0 0 0 10c1.5 0 3-.5 4-1.5"/><path d="M12 12c3-1.5 5.5-4 5.5-7a5 5 0 0 0-10 0c0 1.5.5 3 1.5 4"/><path d="M12 12c1.5 3 4 5.5 7 5.5a5 5 0 0 0 0-10c-1.5 0-3 .5-4 1.5"/><path d="M12 12c-3 1.5-5.5 4-5.5 7a5 5 0 0 0 10 0c0-1.5-.5-3-1.5-4"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/>'); },
+  pump:        function(){ return svgWrap('<rect x="2" y="8" width="8" height="12" rx="1"/><path d="M10 14h6a4 4 0 0 0 4-4V6"/><path d="M18 6l3 3"/><path d="M18 6l-3 3"/>'); },
+  plug:        function(){ return svgWrap('<path d="M12 22v-5"/><path d="M9 7V2"/><path d="M15 7V2"/><rect x="6" y="7" width="12" height="5" rx="1"/><path d="M8 12v2a4 4 0 0 0 8 0v-2"/>'); },
+  droplets:    function(){ return svgWrap('<path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7.29 6.75 7 5.3c-.29 1.45-1.14 2.84-2.29 3.76S3 11.1 3 12.25c0 2.22 1.78 4.05 4 4.05z"/><path d="M12.56 14.1c1.56 0 2.82-1.28 2.82-2.84 0-.82-.4-1.59-1.2-2.24-.8-.65-1.33-1.39-1.62-2.22-.28 1-.84 1.93-1.62 2.58-.4.32-.7.72-.87 1.15"/>'); },
+  flame:       function(){ return svgWrap('<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>'); },
+  cog:         function(){ return svgWrap('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2.82 1.18V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 7.4 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.18 14H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 7.4a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 10 4.18V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 2.82 1.09l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.82 10H21a2 2 0 0 1 0 4h-.09c-.66 0-1.25.4-1.51 1z"/>'); },
+  zap:         function(){ return svgWrap('<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'); },
+  signal:      function(){ return svgWrap('<path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/>'); },
+  wifi:        function(){ return svgWrap('<path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>'); },
+  clock:       function(){ return svgWrap('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'); },
+  home:        function(){ return svgWrap('<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>'); },
+  sprout:      function(){ return svgWrap('<path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/>'); },
+  leaf:        function(){ return svgWrap('<path d="M11 20A7 7 0 0 1 9.8 6.9C15.5 4.9 17 3.5 19 2c1 2 2 4.5 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>'); },
+  factory:     function(){ return svgWrap('<path d="M2 20V8l7 4V8l7 4V4h6v16z"/><path d="M17 20v-4h3v4"/>'); },
+  flask:       function(){ return svgWrap('<path d="M9 3h6"/><path d="M10 9V3h4v6l5 10H5z"/><path d="M7 19h10"/>'); },
+  shield:      function(){ return svgWrap('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'); },
+  activity:    function(){ return svgWrap('<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>'); },
+  alertTri:    function(){ return svgWrap('<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'); },
+  wind:        function(){ return svgWrap('<path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/>'); }
 };
-var terms = PROFILE_TERMS.home;
+
+// Comprehensive environment profiles
+var PROFILES = {
+  home: {
+    terms: { zone: 'Room', zones: 'Rooms', sensor: 'Sensor', equipment: 'Device',
+             addZone: 'Add Room', addEq: 'Add Device', noEq: 'No devices in this room',
+             heroLabel: 'Home Comfort', wizZonePlaceholder: 'e.g. Living room' },
+    heroOrder: ['temperature_c', 'humidity_pct', 'analog_pct'],
+    catIcons: { lighting: ICO.sun, fan: ICO.fan, pump: ICO.pump, socket: ICO.plug, irrigation: ICO.droplets, heating: ICO.flame, other: ICO.cog },
+    sensorIcons: { temperature_c: ICO.thermometer, humidity_pct: ICO.droplet, analog_pct: ICO.gauge },
+    zoneSuggestions: ['Living room', 'Bedroom', 'Kitchen', 'Bathroom', 'Garage'],
+    eqSuggestions: ['Ceiling light', 'Desk fan', 'Space heater', 'Air purifier'],
+    presets: [
+      { name: 'Comfort cooling', desc: 'Fan on when temp exceeds 28 °C', sensor: 0, cond: 1, thresh: 280, hyst: 10, cat: 'fan' },
+      { name: 'Humidity alert', desc: 'Dehumidifier when humidity > 70%', sensor: 1, cond: 1, thresh: 700, hyst: 20, cat: 'other' }
+    ]
+  },
+  farm: {
+    terms: { zone: 'Field', zones: 'Fields', sensor: 'Sensor', equipment: 'Equipment',
+             addZone: 'Add Field', addEq: 'Add Equipment', noEq: 'No equipment in this field',
+             heroLabel: 'Field Conditions', wizZonePlaceholder: 'e.g. North paddock' },
+    heroOrder: ['humidity_pct', 'temperature_c', 'analog_pct'],
+    catIcons: { lighting: ICO.sun, fan: ICO.wind, pump: ICO.pump, socket: ICO.plug, irrigation: ICO.droplets, heating: ICO.flame, other: ICO.cog },
+    sensorIcons: { temperature_c: ICO.thermometer, humidity_pct: ICO.droplet, analog_pct: ICO.sprout },
+    zoneSuggestions: ['North paddock', 'South paddock', 'Barn', 'Well house'],
+    eqSuggestions: ['Irrigation pump', 'Ventilation fan', 'Feed dispenser', 'Water heater'],
+    presets: [
+      { name: 'Irrigation trigger', desc: 'Pump on when soil moisture < 30%', sensor: 2, cond: 0, thresh: 300, hyst: 50, cat: 'irrigation' },
+      { name: 'Heat protection', desc: 'Misting when temp > 35 °C', sensor: 0, cond: 1, thresh: 350, hyst: 20, cat: 'irrigation' }
+    ]
+  },
+  greenhouse: {
+    terms: { zone: 'Bay', zones: 'Bays', sensor: 'Sensor', equipment: 'Equipment',
+             addZone: 'Add Bay', addEq: 'Add Equipment', noEq: 'No equipment in this bay',
+             heroLabel: 'Climate Status', wizZonePlaceholder: 'e.g. Propagation bay' },
+    heroOrder: ['temperature_c', 'humidity_pct', 'analog_pct'],
+    catIcons: { lighting: ICO.sun, fan: ICO.wind, pump: ICO.pump, socket: ICO.plug, irrigation: ICO.droplets, heating: ICO.flame, other: ICO.leaf },
+    sensorIcons: { temperature_c: ICO.thermometer, humidity_pct: ICO.droplet, analog_pct: ICO.sprout },
+    zoneSuggestions: ['Propagation bay', 'Growing bay', 'Seedling area', 'Storage'],
+    eqSuggestions: ['Exhaust fan', 'Water pump', 'Grow lights', 'Shade motor'],
+    presets: [
+      { name: 'Ventilation cycle', desc: 'Exhaust when temp > 30 °C', sensor: 0, cond: 1, thresh: 300, hyst: 15, cat: 'fan' },
+      { name: 'Auto watering', desc: 'Irrigation when moisture < 40%', sensor: 2, cond: 0, thresh: 400, hyst: 50, cat: 'irrigation' },
+      { name: 'Frost guard', desc: 'Heater on below 5 °C', sensor: 0, cond: 0, thresh: 50, hyst: 10, cat: 'heating' }
+    ]
+  },
+  industrial: {
+    terms: { zone: 'Area', zones: 'Areas', sensor: 'Instrument', equipment: 'Asset',
+             addZone: 'Add Area', addEq: 'Add Asset', noEq: 'No assets in this area',
+             heroLabel: 'Process Status', wizZonePlaceholder: 'e.g. Production floor' },
+    heroOrder: ['temperature_c', 'analog_pct', 'humidity_pct'],
+    catIcons: { lighting: ICO.sun, fan: ICO.fan, pump: ICO.pump, socket: ICO.zap, irrigation: ICO.droplets, heating: ICO.flame, other: ICO.factory },
+    sensorIcons: { temperature_c: ICO.thermometer, humidity_pct: ICO.droplet, analog_pct: ICO.activity },
+    zoneSuggestions: ['Production floor', 'Control room', 'Loading bay', 'Utility room'],
+    eqSuggestions: ['Cooling system', 'Alarm relay', 'Exhaust blower', 'Conveyor motor'],
+    presets: [
+      { name: 'Over-temp alarm', desc: 'Alarm when temp > 45 °C', sensor: 0, cond: 1, thresh: 450, hyst: 20, cat: 'other' },
+      { name: 'Process cooling', desc: 'Cooling on above 38 °C', sensor: 0, cond: 1, thresh: 380, hyst: 15, cat: 'fan' }
+    ]
+  },
+  lab: {
+    terms: { zone: 'Station', zones: 'Stations', sensor: 'Instrument', equipment: 'Apparatus',
+             addZone: 'Add Station', addEq: 'Add Apparatus', noEq: 'No apparatus at this station',
+             heroLabel: 'Lab Environment', wizZonePlaceholder: 'e.g. Analysis bench' },
+    heroOrder: ['temperature_c', 'humidity_pct', 'analog_pct'],
+    catIcons: { lighting: ICO.sun, fan: ICO.fan, pump: ICO.pump, socket: ICO.zap, irrigation: ICO.droplets, heating: ICO.flame, other: ICO.flask },
+    sensorIcons: { temperature_c: ICO.thermometer, humidity_pct: ICO.droplet, analog_pct: ICO.activity },
+    zoneSuggestions: ['Analysis bench', 'Fume hood', 'Clean room', 'Storage'],
+    eqSuggestions: ['Fume hood fan', 'Equipment power', 'Chiller unit', 'UV lamp'],
+    presets: [
+      { name: 'Temp stability', desc: 'Alert if temp leaves 20–25 °C', sensor: 0, cond: 1, thresh: 250, hyst: 10, cat: 'other' },
+      { name: 'Humidity control', desc: 'Dehumidifier above 55%', sensor: 1, cond: 1, thresh: 550, hyst: 20, cat: 'other' }
+    ]
+  },
+  custom: {
+    terms: { zone: 'Zone', zones: 'Zones', sensor: 'Sensor', equipment: 'Equipment',
+             addZone: 'Add Zone', addEq: 'Add Equipment', noEq: 'No equipment in this zone',
+             heroLabel: 'Sensor Readings', wizZonePlaceholder: 'e.g. Main area' },
+    heroOrder: ['temperature_c', 'humidity_pct', 'analog_pct'],
+    catIcons: { lighting: ICO.sun, fan: ICO.fan, pump: ICO.pump, socket: ICO.plug, irrigation: ICO.droplets, heating: ICO.flame, other: ICO.cog },
+    sensorIcons: { temperature_c: ICO.thermometer, humidity_pct: ICO.droplet, analog_pct: ICO.gauge },
+    zoneSuggestions: ['Main area', 'Secondary', 'Storage'],
+    eqSuggestions: ['Output 1', 'Output 2'],
+    presets: []
+  }
+};
+
+var terms = PROFILES.home.terms;
+var currentProfile = PROFILES.home;
 
 // =====================================================================
 //  Navigation
@@ -84,10 +192,14 @@ function formatUptime(sec) {
   return Math.floor(sec / 3600) + 'h ' + Math.floor((sec % 3600) / 60) + 'm';
 }
 
-var categoryIcons = {
-  lighting: '☀', fan: '❁', pump: '⬆', socket: '⚡',
-  irrigation: '\u{1F4A7}', heating: '\u{1F525}', other: '⚙'
-};
+function getCatIcon(cat) {
+  var fn = currentProfile.catIcons[cat] || currentProfile.catIcons.other || ICO.cog;
+  return fn();
+}
+function getSensorIcon(key) {
+  var fn = currentProfile.sensorIcons[key] || ICO.gauge;
+  return fn();
+}
 
 function signalLabel(rssi) {
   if (rssi >= -60) return 'Strong';
@@ -98,15 +210,15 @@ function signalLabel(rssi) {
 
 var sensorMeta = {
   1: { name: 'DHT11', readings: [
-    { key: 'temperature_c', label: 'Temperature', unit: ' °C', icon: '\u{1F321}', decimals: 1 },
-    { key: 'humidity_pct',  label: 'Humidity',    unit: ' %',  icon: '\u{1F4A7}', decimals: 0 }
+    { key: 'temperature_c', label: 'Temperature', unit: ' °C', decimals: 1 },
+    { key: 'humidity_pct',  label: 'Humidity',    unit: ' %',  decimals: 0 }
   ]},
   2: { name: 'DHT22', readings: [
-    { key: 'temperature_c', label: 'Temperature', unit: ' °C', icon: '\u{1F321}', decimals: 1 },
-    { key: 'humidity_pct',  label: 'Humidity',    unit: ' %',  icon: '\u{1F4A7}', decimals: 0 }
+    { key: 'temperature_c', label: 'Temperature', unit: ' °C', decimals: 1 },
+    { key: 'humidity_pct',  label: 'Humidity',    unit: ' %',  decimals: 0 }
   ]},
   5: { name: 'Analog', readings: [
-    { key: 'analog_pct', label: 'Analog', unit: ' %', icon: '\u{1F4CA}', decimals: 1 }
+    { key: 'analog_pct', label: 'Analog', unit: ' %', decimals: 1 }
   ]}
 };
 
@@ -134,17 +246,18 @@ function drawSensorHero(s) {
     return;
   }
 
-  var html = '';
+  // Collect all reading cards, then sort by profile heroOrder
+  var cards = [];
   for (var i = 0; i < sensors.length; i++) {
     var sen = sensors[i];
     var meta = sensorMeta[sen.type];
     if (!meta) {
-      html += '<div class="hero-card hero-error">' +
-        '<div class="hero-icon">\u{1F4E1}</div>' +
+      cards.push({ key: '_unknown', html: '<div class="hero-card hero-error">' +
+        '<div class="hero-icon">' + ICO.alertTri() + '</div>' +
         '<div class="hero-value">--</div>' +
         '<div class="hero-label">' + escHtml(sen.name) + '</div>' +
         '<div class="hero-sub disconnected">Unsupported type ' + sen.type + '</div>' +
-      '</div>';
+      '</div>' });
       continue;
     }
 
@@ -160,9 +273,9 @@ function drawSensorHero(s) {
       var statusHtml = '';
 
       if (!sen.connected) {
-        statusHtml = '<div class="hero-sub disconnected">\u{26A0} Node offline</div>';
+        statusHtml = '<div class="hero-sub disconnected">' + ICO.alertTri() + ' Node offline</div>';
       } else if (quality === 'invalid') {
-        statusHtml = '<div class="hero-sub disconnected">\u{26A0} Out of range</div>';
+        statusHtml = '<div class="hero-sub disconnected">' + ICO.alertTri() + ' Out of range</div>';
       } else if (quality === 'missing') {
         statusHtml = '<div class="hero-sub disconnected">Awaiting data</div>';
       }
@@ -174,18 +287,29 @@ function drawSensorHero(s) {
       var unitLabel = rd.unit;
       if (sen.unit && readings.length === 1) unitLabel = ' ' + sen.unit;
 
-      html += '<div class="hero-card' + qClass + '">' +
+      cards.push({ key: rd.key, html: '<div class="hero-card' + qClass + '">' +
         '<div class="hero-top">' +
-          '<div class="hero-icon">' + rd.icon + '</div>' +
+          '<div class="hero-icon">' + getSensorIcon(rd.key) + '</div>' +
           qualityBadge(quality) +
         '</div>' +
         '<div class="hero-value">' + val + '<span class="hero-unit">' + escHtml(unitLabel) + '</span></div>' +
         '<div class="hero-label">' + escHtml(sensorLabel) + ' — ' + rd.label + '</div>' +
         (ageText ? '<div class="hero-age">' + ageText + '</div>' : '') +
         statusHtml +
-      '</div>';
+      '</div>' });
     }
   }
+
+  // Sort cards by profile heroOrder priority
+  var order = currentProfile.heroOrder;
+  cards.sort(function(a, b) {
+    var ai = order.indexOf(a.key); if (ai < 0) ai = 99;
+    var bi = order.indexOf(b.key); if (bi < 0) bi = 99;
+    return ai - bi;
+  });
+
+  var html = '';
+  for (var c = 0; c < cards.length; c++) html += cards[c].html;
   box.innerHTML = html;
 }
 
@@ -202,7 +326,7 @@ function drawStatusBar(s) {
   if (s.reading_age_s !== undefined) {
     var ageStr = formatAge(s.reading_age_s);
     var ageCls = s.reading_age_s > 600 ? ' age-stale' : '';
-    ageItem = '<div class="status-item' + ageCls + '">\u{1F4E1} ' + ageStr + '</div>';
+    ageItem = '<div class="status-item' + ageCls + '">' + ICO.wifi() + ' ' + ageStr + '</div>';
   }
 
   bar.innerHTML =
@@ -210,8 +334,8 @@ function drawStatusBar(s) {
     '<div class="spacer"></div>' +
     '<div class="status-item"><span class="' + syncClass + '">' + syncText + '</span></div>' +
     ageItem +
-    '<div class="status-item">\u{1F4F6} ' + rssiText + '</div>' +
-    '<div class="status-item">⏱ ' + formatUptime(s.uptime_s) + '</div>';
+    '<div class="status-item">' + ICO.signal() + ' ' + rssiText + '</div>' +
+    '<div class="status-item">' + ICO.clock() + ' ' + formatUptime(s.uptime_s) + '</div>';
 }
 
 // =====================================================================
@@ -376,7 +500,7 @@ function drawActiveRules(s) {
     }
     var div = document.createElement('div');
     div.className = 'active-rule-bar';
-    div.innerHTML = '<span class="ar-icon">⚡</span> <span class="ar-name">' +
+    div.innerHTML = '<span class="ar-icon">' + ICO.zap() + '</span> <span class="ar-name">' +
       escHtml(r.name) + '</span> → ' + escHtml(eqName);
     box.appendChild(div);
   }
@@ -433,7 +557,7 @@ function drawDevices(s) {
 
       var icon = document.createElement('div');
       icon.className = 'dev-icon';
-      icon.textContent = categoryIcons[d.category] || '⚙';
+      icon.innerHTML = getCatIcon(d.category);
       row.appendChild(icon);
 
       var info = document.createElement('div');
@@ -518,7 +642,8 @@ function refresh() {
       }
       if (s.env_type) {
         applyTheme(s.env_type);
-        terms = PROFILE_TERMS[s.env_type] || PROFILE_TERMS.custom;
+        currentProfile = PROFILES[s.env_type] || PROFILES.custom;
+        terms = currentProfile.terms;
       }
       hasSensors = s.sensors && s.sensors.length > 0;
       drawSensorHero(s);
@@ -781,6 +906,32 @@ function renderRules(cfg) {
     opt.textContent = eq.name;
     ruleEq.appendChild(opt);
   }
+
+  // Render automation presets for the current environment
+  var presetBox = document.getElementById('preset-suggestions');
+  if (presetBox && currentProfile.presets && currentProfile.presets.length > 0) {
+    var existingNames = {};
+    for (var i = 0; i < rules.length; i++) existingNames[rules[i].name] = true;
+    var presetsHtml = '';
+    for (var p = 0; p < currentProfile.presets.length; p++) {
+      var pr = currentProfile.presets[p];
+      if (existingNames[pr.name]) continue;
+      presetsHtml += '<div class="preset-card">' +
+        '<div class="preset-info"><div class="preset-name">' + escHtml(pr.name) + '</div>' +
+        '<div class="preset-desc">' + escHtml(pr.desc) + '</div></div>' +
+        '<button class="btn-small" data-preset="' + p + '">Use</button></div>';
+    }
+    if (presetsHtml) {
+      presetBox.innerHTML = '<div class="preset-label">' + ICO.zap() + ' Suggested for ' +
+        escHtml(configData && configData.environment ? configData.environment.type || '' : '') +
+        '</div>' + presetsHtml;
+      presetBox.style.display = '';
+    } else {
+      presetBox.style.display = 'none';
+    }
+  } else if (presetBox) {
+    presetBox.style.display = 'none';
+  }
 }
 
 document.getElementById('rule-sensor').onchange = function() {
@@ -823,6 +974,42 @@ document.getElementById('add-rule-btn').onclick = function() {
       }
     });
 };
+
+// Preset suggestion click handler
+var presetBox = document.getElementById('preset-suggestions');
+if (presetBox) {
+  presetBox.onclick = function(e) {
+    var btn = e.target.closest('[data-preset]');
+    if (!btn) return;
+    var idx = parseInt(btn.getAttribute('data-preset'));
+    var pr = currentProfile.presets[idx];
+    if (!pr) return;
+    // Find first equipment matching the preset category
+    var eqId = '';
+    if (configData && configData.equipment) {
+      for (var i = 0; i < configData.equipment.length; i++) {
+        var eq = configData.equipment[i];
+        if (eq.category === pr.cat && eq.output !== undefined && eq.output !== null) {
+          eqId = eq.id; break;
+        }
+      }
+      if (!eqId) {
+        for (var i = 0; i < configData.equipment.length; i++) {
+          if (configData.equipment[i].output !== undefined && configData.equipment[i].output !== null) {
+            eqId = configData.equipment[i].id; break;
+          }
+        }
+      }
+    }
+    if (!eqId) return;
+    document.getElementById('rule-name').value = pr.name;
+    document.getElementById('rule-sensor').value = pr.sensor;
+    document.getElementById('rule-condition').value = pr.cond;
+    document.getElementById('rule-threshold').value = (pr.thresh / 10).toFixed(1);
+    document.getElementById('rule-hysteresis').value = (pr.hyst / 10).toFixed(1);
+    document.getElementById('rule-equipment').value = eqId;
+  };
+}
 
 function toggleRule(rule) {
   var data = {
@@ -940,11 +1127,17 @@ document.getElementById('wiz-next-1').onclick = function() {
 // Step 2: type + profile hint
 function updateProfileHint() {
   var hint = document.getElementById('wiz-profile-hint');
-  var profile = ENV_PROFILES[wizData.env_type];
-  if (!profile) { hint.innerHTML = ''; return; }
+  var prof = PROFILES[wizData.env_type];
+  var envP = ENV_PROFILES[wizData.env_type];
+  if (!prof || !envP) { hint.innerHTML = ''; return; }
+  var presetHtml = '';
+  if (prof.presets && prof.presets.length) {
+    presetHtml = '<br><span style="color:var(--muted)">Automation ideas: ' +
+      prof.presets.map(function(p){ return p.name; }).join(', ') + '</span>';
+  }
   hint.innerHTML = '<strong>Suggested for ' + wizData.env_type + ':</strong><br>' +
-    '<span style="color:var(--muted)">Sensors: ' + profile.sensors.join(', ') + '<br>' +
-    'Equipment: ' + profile.equipment.join(', ') + '</span><br>' +
+    '<span style="color:var(--muted)">Sensors: ' + envP.sensors.join(', ') + '<br>' +
+    'Equipment: ' + envP.equipment.join(', ') + '</span>' + presetHtml + '<br>' +
     '<small>These are suggestions — you choose what to add in the next steps.</small>';
 }
 
@@ -959,7 +1152,14 @@ typeGrid.onclick = function(e) {
   updateProfileHint();
 };
 document.getElementById('wiz-back-2').onclick = function() { wizGoTo(1); };
-document.getElementById('wiz-next-2').onclick = function() { updateProfileHint(); wizGoTo(3); };
+document.getElementById('wiz-next-2').onclick = function() {
+  updateProfileHint();
+  var prof = PROFILES[wizData.env_type] || PROFILES.custom;
+  currentProfile = prof;
+  terms = prof.terms;
+  document.getElementById('wiz-zone-name').placeholder = prof.terms.wizZonePlaceholder || 'e.g. Main area';
+  wizGoTo(3);
+};
 
 // Step 3: zones
 function renderWizZones() {

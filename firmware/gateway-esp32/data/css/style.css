@@ -518,3 +518,34 @@ button:disabled { opacity: 0.5; cursor: wait; }
 .btn-danger:hover { background: #c0392b; }
 .auth-user-row { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
 .auth-user-row:last-child { border-bottom: none; }
+
+/* Phase 10: SVG icon system */
+.ls-icon {
+  width: 1em; height: 1em; display: inline-block; vertical-align: -0.125em;
+  flex-shrink: 0;
+}
+.hero-icon .ls-icon { width: 24px; height: 24px; }
+.dev-icon .ls-icon { width: 20px; height: 20px; }
+.status-bar .ls-icon { width: 14px; height: 14px; vertical-align: -0.15em; }
+.ar-icon .ls-icon { width: 16px; height: 16px; }
+.hero-sub .ls-icon { width: 12px; height: 12px; }
+
+/* Phase 10: Automation presets */
+#preset-suggestions {
+  margin: 12px 0; padding: 12px; border-radius: var(--radius-sm);
+  background: var(--accent-soft); border: 1px solid var(--accent);
+}
+.preset-label {
+  font-size: 12px; font-weight: 600; color: var(--accent);
+  text-transform: uppercase; letter-spacing: 0.04em;
+  margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+}
+.preset-label .ls-icon { width: 14px; height: 14px; }
+.preset-card {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 0; border-bottom: 1px solid var(--border); gap: 8px;
+}
+.preset-card:last-child { border-bottom: none; }
+.preset-info { flex: 1; min-width: 0; }
+.preset-name { font-size: 13px; font-weight: 600; }
+.preset-desc { font-size: 12px; color: var(--muted); }
