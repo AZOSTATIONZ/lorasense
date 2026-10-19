@@ -55,7 +55,8 @@ DHT *dhtSensor = nullptr;
 float lastTempC = 0;
 float lastHumid = 0;
 bool  sensorOk  = false;
-uint8_t configVersion = 0xFF;  // 0xFF = no config received yet
+uint8_t configAnalogPin = 0xFF;  // 0xFF = no analog sensor
+uint8_t configVersion = 0xFF;    // 0xFF = no config received yet
 
 void initDht(uint8_t pin) {
   if (dhtSensor) delete dhtSensor;
@@ -173,6 +174,14 @@ void sendTelemetry() {
   t.humidityX10    = (int16_t)(lastHumid * 10);
   t.relayStates    = relayStateBits();
 
+  if (configAnalogPin != 0xFF) {
+    t.analogValue = (int16_t)analogRead(configAnalogPin);
+    t.analogPin   = configAnalogPin;
+  } else {
+    t.analogValue = -1;
+    t.analogPin   = 0xFF;
+  }
+
   uint8_t buf[FRAME_MAX];
   uint8_t len = buildFrame(buf, ADDR_GATEWAY, ADDR_NODE1,
                            MSG_TELEMETRY, 0, &t, sizeof(t));
@@ -224,20 +233,22 @@ void handleIncoming(const uint8_t *buf, uint8_t len) {
       uint8_t ver       = cfg->data[0];
       uint8_t sensType  = cfg->data[1];
       uint8_t sensPin   = cfg->data[2];
-      uint16_t telSec   = ((uint16_t)cfg->data[3] << 8) | cfg->data[4];
-      uint16_t fsSec    = ((uint16_t)cfg->data[5] << 8) | cfg->data[6];
-      uint8_t relayCnt  = cfg->data[7];
+      uint8_t aPin      = cfg->data[3];
+      uint16_t telSec   = ((uint16_t)cfg->data[4] << 8) | cfg->data[5];
+      uint16_t fsSec    = ((uint16_t)cfg->data[6] << 8) | cfg->data[7];
 
       Serial.print("[Config] v"); Serial.print(ver);
-      Serial.print(" sensor="); Serial.print(sensType);
-      Serial.print(" pin="); Serial.print(sensPin);
+      Serial.print(" dht="); Serial.print(sensType);
+      Serial.print("/pin"); Serial.print(sensPin);
+      Serial.print(" adc=A"); Serial.print(aPin != 0xFF ? aPin - 54 : -1);
       Serial.print(" tel="); Serial.print(telSec);
       Serial.print("s fs="); Serial.print(fsSec);
-      Serial.print("s relays="); Serial.println(relayCnt);
+      Serial.println("s");
 
       if (sensPin != 0xFF && sensPin != configDhtPin) {
         initDht(sensPin);
       }
+      configAnalogPin = aPin;
       if (telSec >= 2 && telSec <= 300) {
         telemetryIntervalMs = (uint32_t)telSec * 1000;
       }

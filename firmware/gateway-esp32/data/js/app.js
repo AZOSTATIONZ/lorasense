@@ -63,6 +63,9 @@ var sensorMeta = {
   2: { name: 'DHT22', readings: [
     { key: 'temperature_c', label: 'Temperature', unit: ' °C', icon: '\u{1F321}', decimals: 1 },
     { key: 'humidity_pct',  label: 'Humidity',    unit: ' %',  icon: '\u{1F4A7}', decimals: 0 }
+  ]},
+  5: { name: 'Analog', readings: [
+    { key: 'analog_pct', label: 'Analog', unit: ' %', icon: '\u{1F4CA}', decimals: 1 }
   ]}
 };
 

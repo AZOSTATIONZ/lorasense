@@ -70,6 +70,8 @@ const uint32_t CONFIG_PUSH_INITIAL_DELAY_MS = 3000;  // wait for node after boot
 // --- Telemetry from node ---
 float nodeTemperature = 0;
 float nodeHumidity    = 0;
+int16_t nodeAnalogValue = -1;  // raw ADC, -1 = no sensor
+uint8_t nodeAnalogPin   = 0xFF;
 
 // =====================================================================
 //  LittleFS file server
@@ -127,7 +129,10 @@ void sendCommand(uint8_t outputIdx) {
 //  Handle incoming telemetry
 // =====================================================================
 void handleTelemetry(const uint8_t *buf, uint8_t len) {
-  if (len < HEADER_SIZE + sizeof(TelemetryPayload) + CRC_SIZE) return;
+  // Accept both old (5-byte) and new (8-byte) telemetry payloads
+  uint8_t payloadLen = len - HEADER_SIZE - CRC_SIZE;
+  if (payloadLen < 5) return;  // minimum: temp + hum + relays
+
   TelemetryPayload *t = (TelemetryPayload *)(buf + HEADER_SIZE);
   nodeTemperature = t->temperatureX10 / 10.0;
   nodeHumidity    = t->humidityX10    / 10.0;
@@ -136,10 +141,18 @@ void handleTelemetry(const uint8_t *buf, uint8_t len) {
     outputs[i].confirmedOn = (t->relayStates >> i) & 1;
   }
 
+  if (payloadLen >= sizeof(TelemetryPayload)) {
+    nodeAnalogValue = t->analogValue;
+    nodeAnalogPin   = t->analogPin;
+  }
+
   nodeOnline = true;
   lastNodeHeard = millis();
   Serial.print("[LoRa] Telemetry: temp="); Serial.print(nodeTemperature);
   Serial.print(" hum="); Serial.print(nodeHumidity);
+  if (nodeAnalogPin != 0xFF) {
+    Serial.print(" adc="); Serial.print(nodeAnalogValue);
+  }
   Serial.print(" relays=0b"); Serial.println(t->relayStates, BIN);
 }
 
@@ -223,11 +236,15 @@ void bumpConfigVersion() {
 void pushConfigToNode() {
   uint8_t sensType = 0;
   uint8_t sensPin  = 0xFF;
+  uint8_t analogPin = 0xFF;
   for (int i = 0; i < config.sensorCount; i++) {
-    if (config.sensors[i].active && config.sensors[i].enabled) {
-      sensType = config.sensors[i].sensorType;
-      sensPin  = config.sensors[i].pin;
-      break;
+    SensorInstance &si = config.sensors[i];
+    if (!si.active || !si.enabled) continue;
+    if ((si.sensorType == STYPE_DHT11 || si.sensorType == STYPE_DHT22) && sensType == 0) {
+      sensType = si.sensorType;
+      sensPin  = si.pin;
+    } else if (si.sensorType == STYPE_ANALOG && analogPin == 0xFF) {
+      analogPin = si.pin;
     }
   }
 
@@ -240,11 +257,11 @@ void pushConfigToNode() {
   cfg.data[0]    = configVersion;
   cfg.data[1]    = sensType;
   cfg.data[2]    = sensPin;
-  cfg.data[3]    = (telSec >> 8) & 0xFF;
-  cfg.data[4]    = telSec & 0xFF;
-  cfg.data[5]    = (fsSec >> 8) & 0xFF;
-  cfg.data[6]    = fsSec & 0xFF;
-  cfg.data[7]    = MEGA_RELAY_COUNT;
+  cfg.data[3]    = analogPin;
+  cfg.data[4]    = (telSec >> 8) & 0xFF;
+  cfg.data[5]    = telSec & 0xFF;
+  cfg.data[6]    = (fsSec >> 8) & 0xFF;
+  cfg.data[7]    = fsSec & 0xFF;
 
   uint8_t buf[FRAME_MAX];
   uint8_t len = buildFrame(buf, ADDR_NODE1, ADDR_GATEWAY,
@@ -255,8 +272,9 @@ void pushConfigToNode() {
 
   lastConfigPush = millis();
   Serial.print("[Sync] Pushed config v"); Serial.print(configVersion);
-  Serial.print(" sensor="); Serial.print(sensType);
-  Serial.print(" pin="); Serial.println(sensPin);
+  Serial.print(" dht="); Serial.print(sensType);
+  Serial.print("/pin"); Serial.print(sensPin);
+  Serial.print(" adc="); Serial.println(analogPin);
 }
 
 // =====================================================================
@@ -365,6 +383,12 @@ void handleState() {
       if (nodeOnline) {
         rd["temperature_c"] = serialized(String(nodeTemperature, 1));
         rd["humidity_pct"]  = serialized(String(nodeHumidity, 1));
+      }
+    } else if (si.sensorType == STYPE_ANALOG) {
+      JsonObject rd = so["readings"].to<JsonObject>();
+      if (nodeOnline && nodeAnalogValue >= 0) {
+        rd["analog_raw"] = nodeAnalogValue;
+        rd["analog_pct"] = serialized(String(nodeAnalogValue / 10.23, 1));
       }
     }
   }

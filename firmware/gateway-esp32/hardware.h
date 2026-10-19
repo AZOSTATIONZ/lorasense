@@ -153,8 +153,7 @@ const SensorDriver SENSOR_DRIVERS[] = {
     BUS_GPIO, 1, CAP_DI, true, nullptr },
   { STYPE_DHT22,   "DHT22",
     "Temperature & Humidity (±0.5°C, ±2%RH)",
-    BUS_GPIO, 1, CAP_DI, false,
-    "Change DHT constructor type; same library" },
+    BUS_GPIO, 1, CAP_DI, true, nullptr },
   { STYPE_BME280,  "BME280",
     "Temperature, Humidity & Pressure",
     BUS_I2C, 0, 0, false,
@@ -165,8 +164,7 @@ const SensorDriver SENSOR_DRIVERS[] = {
     "Add OneWire + DallasTemperature libraries" },
   { STYPE_ANALOG,  "Analog sensor",
     "Generic analog input (soil moisture, light, etc.)",
-    BUS_ANALOG, 1, CAP_AI, false,
-    "Add analogRead handler in node telemetry loop" },
+    BUS_ANALOG, 1, CAP_AI, true, nullptr },
 };
 const int SENSOR_DRIVER_COUNT = sizeof(SENSOR_DRIVERS) / sizeof(SENSOR_DRIVERS[0]);
 

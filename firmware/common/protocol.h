@@ -68,6 +68,9 @@ struct __attribute__((packed)) TelemetryPayload {
   int16_t  temperatureX10;  // e.g. 245 = 24.5 °C
   int16_t  humidityX10;     // e.g. 655 = 65.5 %RH
   uint8_t  relayStates;     // bit 0 = relay 0, bit 1 = relay 1, etc.
+  // Extended fields (v2.1) — gateway accepts frames with or without these
+  int16_t  analogValue;     // raw ADC reading (0-1023 on Mega), -1 = no sensor
+  uint8_t  analogPin;       // which analog pin was read (0xFF = none)
 };
 
 // --- Config sync types ---
@@ -82,11 +85,11 @@ struct __attribute__((packed)) ConfigPushPayload {
 
 // CFG_FULL_SYNC data layout (8 bytes):
 //   [0]    config version (0-255, wraps)
-//   [1]    sensor type (SensorType enum)
-//   [2]    sensor pin (0xFF = none)
-//   [3-4]  telemetry interval in seconds (big-endian)
-//   [5-6]  fail-safe timeout in seconds (big-endian)
-//   [7]    active relay count
+//   [1]    DHT sensor type (1=DHT11, 2=DHT22, 0=none)
+//   [2]    DHT sensor pin (0xFF = none)
+//   [3]    analog sensor pin (0xFF = none)
+//   [4-5]  telemetry interval in seconds (big-endian)
+//   [6-7]  fail-safe timeout in seconds (big-endian)
 
 // --- Config ACK payload (node -> gateway) ---
 struct __attribute__((packed)) ConfigAckPayload {
