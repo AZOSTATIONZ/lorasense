@@ -1209,6 +1209,10 @@ void evaluateRules() {
     int16_t valueX10;
     if (r.sensor == 0)      valueX10 = (int16_t)(nodeTemperature * 10);
     else if (r.sensor == 1) valueX10 = (int16_t)(nodeHumidity * 10);
+    else if (r.sensor == 2) {
+      if (nodeAnalogValue < 0) continue;  // no analog reading yet
+      valueX10 = (int16_t)(nodeAnalogValue * 1000L / 1023);  // 0-1000 = 0.0-100.0%
+    }
     else continue;
 
     bool shouldTrigger;

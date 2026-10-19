@@ -605,9 +605,9 @@ function renderRules(cfg) {
     ruleList.innerHTML = '<div class="empty-hint">No automation rules yet.</div>';
   }
 
-  var sensorNames = ['Temperature', 'Humidity'];
+  var sensorNames = ['Temperature', 'Humidity', 'Analog'];
   var condNames   = ['above', 'below'];
-  var unitNames   = ['°C', '%'];
+  var unitNames   = ['°C', '%', '%'];
 
   for (var i = 0; i < rules.length; i++) {
     var r = rules[i];
@@ -661,6 +661,13 @@ function renderRules(cfg) {
     ruleEq.appendChild(opt);
   }
 }
+
+document.getElementById('rule-sensor').onchange = function() {
+  var hints = ['30.0', '70.0', '50.0'];
+  var units = ['°C', '%RH', '%'];
+  var idx = parseInt(this.value) || 0;
+  document.getElementById('rule-threshold').placeholder = hints[idx] || '30.0';
+};
 
 document.getElementById('add-rule-btn').onclick = function() {
   var name = document.getElementById('rule-name').value.trim();
