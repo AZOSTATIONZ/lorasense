@@ -287,13 +287,23 @@ function drawSensorHero(s) {
       var unitLabel = rd.unit;
       if (sen.unit && readings.length === 1) unitLabel = ' ' + sen.unit;
 
-      cards.push({ key: rd.key, html: '<div class="hero-card' + qClass + '">' +
+      var trend = computeTrend(rd.key);
+      var trendHtml = trend.dir !== 'stable'
+        ? '<span class="hero-trend ' + trend.cls + '">' + trend.arrow + '</span>'
+        : '';
+      var warnCls = getThresholdWarning(rd.key, val);
+      var spark = sparklineSvg(rd.key);
+      var sparkHtml = spark ? '<div class="hero-spark">' + spark + '</div>' : '';
+
+      cards.push({ key: rd.key, html: '<div class="hero-card' + qClass + warnCls + '">' +
         '<div class="hero-top">' +
           '<div class="hero-icon">' + getSensorIcon(rd.key) + '</div>' +
+          trendHtml +
           qualityBadge(quality) +
         '</div>' +
         '<div class="hero-value">' + val + '<span class="hero-unit">' + escHtml(unitLabel) + '</span></div>' +
         '<div class="hero-label">' + escHtml(sensorLabel) + ' — ' + rd.label + '</div>' +
+        sparkHtml +
         (ageText ? '<div class="hero-age">' + ageText + '</div>' : '') +
         statusHtml +
       '</div>' });
@@ -339,6 +349,126 @@ function drawStatusBar(s) {
 }
 
 // =====================================================================
+//  Phase 11: Trend engine, sparklines, threshold warnings, stats
+// =====================================================================
+function computeTrend(key) {
+  if (!chartData || chartData.length < 3) return { dir: 'stable', arrow: '', delta: 0 };
+  var field = key === 'temperature_c' ? 'tc' : key === 'humidity_pct' ? 'h' : null;
+  if (!field) return { dir: 'stable', arrow: '', delta: 0 };
+  var recent = chartData.slice(-10);
+  var first = 0, last = 0, count = recent.length;
+  var half = Math.floor(count / 2);
+  for (var i = 0; i < half; i++) first += recent[i][field];
+  for (var i = half; i < count; i++) last += recent[i][field];
+  first /= half; last /= (count - half);
+  var delta = last - first;
+  var threshold = key === 'temperature_c' ? 0.3 : 1.5;
+  if (delta > threshold) return { dir: 'rising', arrow: ICO.activity(), delta: delta, cls: 'trend-up' };
+  if (delta < -threshold) return { dir: 'falling', arrow: ICO.activity(), delta: delta, cls: 'trend-down' };
+  return { dir: 'stable', arrow: '', delta: 0, cls: 'trend-stable' };
+}
+
+function sparklineSvg(key) {
+  if (!chartData || chartData.length < 3) return '';
+  var field = key === 'temperature_c' ? 'tc' : key === 'humidity_pct' ? 'h' : null;
+  if (!field) return '';
+  var pts = chartData.slice(-30);
+  var vMin = Infinity, vMax = -Infinity;
+  for (var i = 0; i < pts.length; i++) {
+    if (pts[i][field] < vMin) vMin = pts[i][field];
+    if (pts[i][field] > vMax) vMax = pts[i][field];
+  }
+  var range = vMax - vMin || 1;
+  var w = 80, h = 24;
+  var coords = [];
+  for (var i = 0; i < pts.length; i++) {
+    var x = (i / (pts.length - 1)) * w;
+    var y = h - ((pts[i][field] - vMin) / range) * (h - 2) - 1;
+    coords.push(x.toFixed(1) + ',' + y.toFixed(1));
+  }
+  var color = key === 'temperature_c' ? '#ef4444' : '#3b82f6';
+  return '<svg class="sparkline" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
+    '<polyline points="' + coords.join(' ') + '" fill="none" stroke="' + color + '" stroke-width="1.5" stroke-linejoin="round"/>' +
+    '</svg>';
+}
+
+function getThresholdWarning(key, value) {
+  if (!configData || !configData.rules || value === '--') return '';
+  var sensorIdx = key === 'temperature_c' ? 0 : key === 'humidity_pct' ? 1 : key === 'analog_pct' ? 2 : -1;
+  if (sensorIdx < 0) return '';
+  var numVal = parseFloat(value);
+  if (isNaN(numVal)) return '';
+  for (var i = 0; i < configData.rules.length; i++) {
+    var r = configData.rules[i];
+    if (!r.enabled || r.sensor !== sensorIdx) continue;
+    var thresh = r.threshold / 10;
+    var hyst = r.hysteresis / 10;
+    var dist = Math.abs(numVal - thresh);
+    if (r.triggered) return ' hero-warn-active';
+    if (dist <= hyst * 1.5) return ' hero-warn-near';
+  }
+  return '';
+}
+
+function computeStats() {
+  if (!chartData || chartData.length < 2) return null;
+  var stats = {
+    temperature_c: { min: Infinity, max: -Infinity, sum: 0, count: 0 },
+    humidity_pct:  { min: Infinity, max: -Infinity, sum: 0, count: 0 }
+  };
+  for (var i = 0; i < chartData.length; i++) {
+    var p = chartData[i];
+    if (p.tc !== undefined) {
+      var s = stats.temperature_c;
+      if (p.tc < s.min) s.min = p.tc;
+      if (p.tc > s.max) s.max = p.tc;
+      s.sum += p.tc; s.count++;
+    }
+    if (p.h !== undefined) {
+      var s = stats.humidity_pct;
+      if (p.h < s.min) s.min = p.h;
+      if (p.h > s.max) s.max = p.h;
+      s.sum += p.h; s.count++;
+    }
+  }
+  return stats;
+}
+
+function drawStatsRow() {
+  var row = document.getElementById('stats-row');
+  if (!row) return;
+  var stats = computeStats();
+  if (!stats) { row.style.display = 'none'; return; }
+  var html = '';
+  var items = [
+    { key: 'temperature_c', label: 'Temp', unit: '°C', dec: 1, color: '#ef4444' },
+    { key: 'humidity_pct', label: 'Humidity', unit: '%', dec: 0, color: '#3b82f6' }
+  ];
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    var s = stats[it.key];
+    if (!s || s.count === 0) continue;
+    var avg = (s.sum / s.count).toFixed(it.dec);
+    var trend = computeTrend(it.key);
+    var trendHtml = trend.dir !== 'stable'
+      ? '<span class="stat-trend ' + trend.cls + '">' + (trend.delta > 0 ? '+' : '') + trend.delta.toFixed(it.dec) + '</span>'
+      : '<span class="stat-trend trend-stable">stable</span>';
+    html += '<div class="stat-chip">' +
+      '<span class="stat-dot" style="background:' + it.color + '"></span>' +
+      '<span class="stat-label">' + it.label + '</span>' +
+      '<span class="stat-vals">' + s.min.toFixed(it.dec) + ' / <strong>' + avg + '</strong> / ' + s.max.toFixed(it.dec) + it.unit + '</span>' +
+      trendHtml +
+    '</div>';
+  }
+  if (html) {
+    row.innerHTML = html;
+    row.style.display = '';
+  } else {
+    row.style.display = 'none';
+  }
+}
+
+// =====================================================================
 //  Chart — canvas-based sensor history
 // =====================================================================
 var chartRange = 60;  // minutes to show
@@ -356,6 +486,7 @@ function loadHistory() {
     .then(function(data) {
       chartData = data;
       drawChart();
+      drawStatsRow();
     });
 }
 

@@ -549,3 +549,59 @@ button:disabled { opacity: 0.5; cursor: wait; }
 .preset-info { flex: 1; min-width: 0; }
 .preset-name { font-size: 13px; font-weight: 600; }
 .preset-desc { font-size: 12px; color: var(--muted); }
+
+/* Phase 11: Trend indicators */
+.hero-trend {
+  display: inline-flex; align-items: center;
+  font-size: 12px; font-weight: 600; margin-left: 4px;
+}
+.hero-trend .ls-icon { width: 14px; height: 14px; }
+.trend-up { color: var(--fail); }
+.trend-up .ls-icon { transform: rotate(-45deg); }
+.trend-down { color: #3b82f6; }
+.trend-down .ls-icon { transform: rotate(45deg); }
+.trend-stable { color: var(--muted); }
+
+/* Phase 11: Sparklines */
+.hero-spark { margin-top: 4px; height: 24px; }
+.sparkline { width: 100%; height: 24px; display: block; opacity: 0.7; }
+
+/* Phase 11: Threshold warnings */
+.hero-card.hero-warn-near {
+  border-color: var(--pending);
+  box-shadow: 0 0 0 1px var(--pending);
+}
+.hero-card.hero-warn-active {
+  border-color: var(--fail);
+  box-shadow: 0 0 0 1px var(--fail);
+  animation: warn-pulse 2s ease-in-out infinite;
+}
+@keyframes warn-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px var(--fail); }
+  50% { box-shadow: 0 0 8px 2px var(--fail); }
+}
+
+/* Phase 11: Stats summary row */
+.stats-row {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;
+}
+.stat-chip {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 6px 10px;
+  font-size: 11px; flex: 1; min-width: 0;
+}
+.stat-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+}
+.stat-label {
+  font-weight: 600; color: var(--muted); white-space: nowrap;
+}
+.stat-vals { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stat-trend {
+  margin-left: auto; font-size: 10px; font-weight: 600;
+  white-space: nowrap;
+}
+.stat-trend.trend-up { color: var(--fail); }
+.stat-trend.trend-down { color: #3b82f6; }
+.stat-trend.trend-stable { color: var(--muted); }
