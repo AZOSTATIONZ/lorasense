@@ -115,8 +115,36 @@ const int MEGA_RESERVATION_COUNT = sizeof(MEGA_RESERVATIONS) / sizeof(MEGA_RESER
 const uint8_t MEGA_RELAY_PINS[] = { 22, 23, 24, 25 };
 const int MEGA_RELAY_COUNT = 4;
 
-// DHT11 pin on the current Mega node
+// DHT11 pin on the current Mega node (legacy default)
 const uint8_t MEGA_DHT_PIN = 7;
+
+// I2C pins on the Mega — advisory reservation when no I2C sensor is configured
+const uint8_t MEGA_I2C_SDA = 20;
+const uint8_t MEGA_I2C_SCL = 21;
+
+// =====================================================================
+//  Expansion module placeholder — for future GPIO expanders
+// =====================================================================
+enum ExpansionType : uint8_t {
+  EXP_NONE    = 0,
+  EXP_MCP23017 = 1,  // I2C 16-GPIO expander
+  EXP_PCF8574  = 2,  // I2C 8-GPIO expander
+};
+
+struct ExpansionModule {
+  ExpansionType type;
+  const char *name;
+  uint8_t    i2cAddress;
+  uint8_t    pinCount;
+  bool       supported;
+  const char *devNote;
+};
+
+const ExpansionModule EXPANSION_MODULES[] = {
+  { EXP_MCP23017, "MCP23017", 0x20, 16, false, "Add Adafruit MCP23017 library" },
+  { EXP_PCF8574,  "PCF8574",  0x27, 8,  false, "Add PCF8574 library" },
+};
+const int EXPANSION_MODULE_COUNT = sizeof(EXPANSION_MODULES) / sizeof(EXPANSION_MODULES[0]);
 
 // =====================================================================
 //  Sensor driver registry — what the firmware actually supports
@@ -205,14 +233,33 @@ struct NodeInstance {
 // =====================================================================
 //  HardwareManager — node CRUD, pin state computation
 // =====================================================================
+// Forward-declared sensor info for dynamic pin state.
+// The gateway sets these after config loads so getPinState can reflect
+// config-managed sensor assignments instead of hardcoded pins.
+struct SensorPinInfo {
+  uint8_t    pin;
+  uint8_t    sensorType;  // SensorType enum
+  const char *name;       // sensor instance name
+  bool       active;
+};
+
 class HardwareManager {
 public:
   NodeInstance nodes[MAX_NODES];
   int nodeCount;
 
-  HardwareManager() : nodeCount(0) {
+  // Config-managed sensor assignments (set by gateway after config loads)
+  SensorPinInfo *configSensors;
+  int            configSensorCount;
+
+  HardwareManager() : nodeCount(0), configSensors(nullptr), configSensorCount(0) {
     memset(nodes, 0, sizeof(nodes));
     clearRelayLabels();
+  }
+
+  void setSensorPins(SensorPinInfo *sensors, int count) {
+    configSensors = sensors;
+    configSensorCount = count;
   }
 
   bool begin() {
@@ -338,10 +385,20 @@ public:
         return;
       }
     }
-    // Check DHT sensor
-    if (pin == MEGA_DHT_PIN) {
-      state = PIN_ASSIGNED;
-      usedBy = "DHT11";
+    // Check config-managed sensor assignments
+    if (configSensors) {
+      for (int i = 0; i < configSensorCount; i++) {
+        if (configSensors[i].active && configSensors[i].pin == pin) {
+          state = PIN_ASSIGNED;
+          usedBy = configSensors[i].name;
+          return;
+        }
+      }
+    }
+    // I2C pin advisory — reserve SDA/SCL for future I2C sensors
+    if (pin == MEGA_I2C_SDA || pin == MEGA_I2C_SCL) {
+      state = PIN_RESERVED_SYSTEM;
+      usedBy = (pin == MEGA_I2C_SDA) ? "I2C SDA (reserved)" : "I2C SCL (reserved)";
       return;
     }
     state = PIN_AVAILABLE;

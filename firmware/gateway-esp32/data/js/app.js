@@ -1039,15 +1039,21 @@ document.getElementById('pin-search').oninput = function() { if (window._pinData
 document.getElementById('pin-filter').onchange = function() { if (window._pinData) renderPinTable(window._pinData); };
 
 function loadDrivers() {
-  fetch('/api/hw/drivers').then(function(r){return r.json();}).then(function(drivers){
+  fetch('/api/hw/drivers').then(function(r){return r.json();}).then(function(data){
+    var drivers = Array.isArray(data) ? data : (data.drivers || []);
+    window._driverData = drivers;
     var el = document.getElementById('driver-list');
     el.innerHTML = drivers.map(function(d){
+      var meta = d.quantity ? '<small style="color:var(--muted)"> · ' + esc(d.quantity) +
+        (d.unit ? ' (' + esc(d.unit) + ')' : '') +
+        (d.max_per_node ? ' · max ' + d.max_per_node + '/node' : '') + '</small>' : '';
       return '<div class="driver-card">' +
-        '<div class="driver-info"><h4>' + esc(d.name) + '</h4><p>' + esc(d.desc) + '</p></div>' +
+        '<div class="driver-info"><h4>' + esc(d.name) + meta + '</h4><p>' + esc(d.desc) + '</p></div>' +
         '<span class="driver-badge ' + (d.supported ? 'ok' : 'na') + '">' +
           (d.supported ? 'Supported' : 'Not yet') +
         '</span></div>';
     }).join('');
+    updateSensorPinOptions();
   });
 }
 
@@ -1074,7 +1080,9 @@ function loadSensors() {
   });
 
   // Populate sensor type dropdown (supported only)
-  fetch('/api/hw/drivers').then(function(r){return r.json();}).then(function(drivers){
+  fetch('/api/hw/drivers').then(function(r){return r.json();}).then(function(data){
+    var drivers = Array.isArray(data) ? data : (data.drivers || []);
+    window._driverData = drivers;
     var sel = document.getElementById('sensor-type');
     sel.innerHTML = '';
     for (var i = 0; i < drivers.length; i++) {
@@ -1101,15 +1109,35 @@ function loadSensors() {
   }
 }
 
+var CAP_NAMES = {1: 'DI', 2: 'DO', 4: 'AI', 8: 'PWM', 16: 'INT'};
+
 function updateSensorPinOptions() {
-  if (!window._pinData) return;
+  if (!window._pinData || !window._driverData) return;
   var sel = document.getElementById('sensor-pin');
   sel.innerHTML = '';
   var pins = window._pinData;
+  var typeVal = parseInt(document.getElementById('sensor-type').value);
+  var driver = null;
+  for (var d = 0; d < window._driverData.length; d++) {
+    if (window._driverData[d].type === typeVal) { driver = window._driverData[d]; break; }
+  }
+  var capFilter = driver ? (CAP_NAMES[driver.pin_req] || '') : 'DI';
+  var pinInfo = document.getElementById('sensor-pin-info');
+  if (pinInfo) {
+    if (driver && driver.pin_req === 0) {
+      pinInfo.textContent = 'Bus device — no pin assignment needed';
+      sel.style.display = 'none';
+      sel.innerHTML = '<option value="255">None (bus)</option>';
+    } else {
+      pinInfo.textContent = capFilter ? 'Requires: ' + capFilter + ' capable pin' : '';
+      sel.style.display = '';
+    }
+  }
+  if (driver && driver.pin_req === 0) return;
   for (var i = 0; i < pins.length; i++) {
     var p = pins[i];
     if (p.state !== 0) continue;
-    if (p.caps.indexOf('DI') < 0) continue;
+    if (capFilter && p.caps.indexOf(capFilter) < 0) continue;
     var opt = document.createElement('option');
     opt.value = p.pin;
     opt.textContent = p.name + ' (' + p.caps + ')';

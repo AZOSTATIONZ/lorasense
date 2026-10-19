@@ -643,6 +643,19 @@ void syncRelayLabels() {
   }
 }
 
+SensorPinInfo sensorPinCache[MAX_SENSORS];
+
+void syncSensorPins() {
+  for (int i = 0; i < config.sensorCount && i < MAX_SENSORS; i++) {
+    SensorInstance &s = config.sensors[i];
+    sensorPinCache[i].pin        = s.pin;
+    sensorPinCache[i].sensorType = s.sensorType;
+    sensorPinCache[i].name       = s.name;
+    sensorPinCache[i].active     = s.active && s.enabled;
+  }
+  hw.setSensorPins(sensorPinCache, config.sensorCount);
+}
+
 void handleAddEquipment() {
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
@@ -1097,6 +1110,7 @@ void handleAddSensor() {
     return;
   }
   bumpConfigVersion();
+  syncSensorPins();
   server.send(201, "application/json", "{\"ok\":true}");
 }
 
@@ -1111,6 +1125,7 @@ void handleDeleteSensor() {
     return;
   }
   bumpConfigVersion();
+  syncSensorPins();
   server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -1203,7 +1218,7 @@ void handleGetRelays() {
 
 void handleGetDrivers() {
   JsonDocument doc;
-  JsonArray arr = doc.to<JsonArray>();
+  JsonArray arr = doc["drivers"].to<JsonArray>();
   for (int i = 0; i < SENSOR_DRIVER_COUNT; i++) {
     const SensorDriver &d = SENSOR_DRIVERS[i];
     JsonObject obj = arr.add<JsonObject>();
@@ -1212,8 +1227,23 @@ void handleGetDrivers() {
     obj["desc"]      = d.description;
     obj["bus"]       = (int)d.bus;
     obj["pins"]      = d.pinCount;
+    obj["pin_req"]   = d.pinRequirement;
     obj["supported"] = d.supported;
+    obj["quantity"]  = d.quantity;
+    obj["unit"]      = d.unit;
+    obj["max_per_node"] = (int)d.maxPerNode;
     if (d.devNote) obj["dev_note"] = d.devNote;
+  }
+  JsonArray expArr = doc["expansion"].to<JsonArray>();
+  for (int i = 0; i < EXPANSION_MODULE_COUNT; i++) {
+    const ExpansionModule &m = EXPANSION_MODULES[i];
+    JsonObject obj = expArr.add<JsonObject>();
+    obj["type"]      = (int)m.type;
+    obj["name"]      = m.name;
+    obj["i2c_addr"]  = m.i2cAddress;
+    obj["pins"]      = m.pinCount;
+    obj["supported"] = m.supported;
+    if (m.devNote) obj["dev_note"] = m.devNote;
   }
   String json;
   serializeJson(doc, json);
@@ -1374,6 +1404,7 @@ void setup() {
   hw.ensureDefaultNode();
   ensureDefaultSensor();
   syncRelayLabels();
+  syncSensorPins();
   Serial.print("Nodes: "); Serial.println(hw.nodeCount);
   Serial.print("Sensors: "); Serial.println(config.sensorCount);
 
