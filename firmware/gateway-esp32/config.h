@@ -75,13 +75,19 @@ struct SensorInstance {
 struct AutomationRule {
   char    id[ID_LEN];
   char    name[NAME_LEN];
-  uint8_t sensor;          // 0 = temperature, 1 = humidity
+  uint8_t sensor;          // 0 = temperature, 1 = humidity, 2 = analog
   uint8_t condition;       // 0 = above, 1 = below
   int16_t thresholdX10;    // e.g. 300 = 30.0°C
   int16_t hysteresisX10;   // e.g. 30 = 3.0°C
   char    equipmentId[ID_LEN];
   bool    enabled;
-  bool    triggered;       // runtime state, not saved
+  uint16_t durationS;      // sensor must exceed threshold for this many seconds
+  uint16_t cooldownS;      // minimum seconds between re-activations
+  // --- runtime state (not persisted) ---
+  bool     triggered;
+  uint32_t exceedSince;    // millis() when condition first became true (0 = not exceeding)
+  uint32_t lastActionAt;   // millis() of last trigger/release action
+  bool     faultActive;    // true if rule was disabled due to stale/missing sensor
 };
 
 // --- Config manager ---
@@ -448,7 +454,12 @@ public:
       r.hysteresisX10 = obj["hysteresis"] | 0;
       strlcpy(r.equipmentId, obj["equipment"] | "", ID_LEN);
       r.enabled       = obj["enabled"] | true;
+      r.durationS     = obj["duration_s"] | 0;
+      r.cooldownS     = obj["cooldown_s"] | 0;
       r.triggered     = false;
+      r.exceedSince   = 0;
+      r.lastActionAt  = 0;
+      r.faultActive   = false;
       ruleCount++;
     }
     f.close();
@@ -472,6 +483,8 @@ public:
       obj["hysteresis"] = r.hysteresisX10;
       obj["equipment"]  = r.equipmentId;
       obj["enabled"]    = r.enabled;
+      if (r.durationS)  obj["duration_s"]  = r.durationS;
+      if (r.cooldownS)  obj["cooldown_s"]  = r.cooldownS;
     }
     serializeJson(doc, f);
     f.close();
@@ -485,7 +498,8 @@ public:
   }
 
   bool addRule(const char *id, const char *name, uint8_t sensor, uint8_t condition,
-               int16_t thresholdX10, int16_t hysteresisX10, const char *equipmentId, bool enabled) {
+               int16_t thresholdX10, int16_t hysteresisX10, const char *equipmentId, bool enabled,
+               uint16_t durationS = 0, uint16_t cooldownS = 0) {
     if (ruleCount >= MAX_RULES) return false;
     if (findRule(id)) return false;
     AutomationRule &r = rules[ruleCount];
@@ -497,13 +511,19 @@ public:
     r.hysteresisX10 = hysteresisX10;
     strlcpy(r.equipmentId, equipmentId, ID_LEN);
     r.enabled       = enabled;
+    r.durationS     = durationS;
+    r.cooldownS     = cooldownS;
     r.triggered     = false;
+    r.exceedSince   = 0;
+    r.lastActionAt  = 0;
+    r.faultActive   = false;
     ruleCount++;
     return saveRules();
   }
 
   bool updateRule(const char *id, const char *name, uint8_t sensor, uint8_t condition,
-                  int16_t thresholdX10, int16_t hysteresisX10, const char *equipmentId, bool enabled) {
+                  int16_t thresholdX10, int16_t hysteresisX10, const char *equipmentId, bool enabled,
+                  uint16_t durationS = 0, uint16_t cooldownS = 0) {
     AutomationRule *r = findRule(id);
     if (!r) return false;
     if (name[0]) strlcpy(r->name, name, NAME_LEN);
@@ -513,6 +533,8 @@ public:
     r->hysteresisX10 = hysteresisX10;
     strlcpy(r->equipmentId, equipmentId, ID_LEN);
     r->enabled       = enabled;
+    r->durationS     = durationS;
+    r->cooldownS     = cooldownS;
     return saveRules();
   }
 

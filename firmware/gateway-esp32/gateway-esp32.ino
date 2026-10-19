@@ -42,6 +42,9 @@ const uint32_t RETRY_DELAY_MS  = 200;
 // --- Output state (per relay channel, not per equipment name) ---
 OutputState outputs[MAX_OUTPUTS];
 
+// --- Action log ---
+ActionLog actionLog;
+
 // --- Sequence number ---
 uint8_t nextSeq = 0;
 
@@ -372,6 +375,7 @@ void handleState() {
       d["on"]     = outputs[eq.outputIndex].confirmedOn;
       d["status"] = statusName(outputs[eq.outputIndex].status);
       d["output"] = eq.outputIndex;
+      if (outputs[eq.outputIndex].manualOverride) d["override"] = true;
     } else {
       d["on"]     = false;
       d["status"] = "IDLE";
@@ -458,6 +462,9 @@ void handleState() {
     ro["equipment"] = r.equipmentId;
     ro["triggered"] = r.triggered;
     ro["enabled"]   = r.enabled;
+    if (r.durationS)  ro["duration_s"]  = r.durationS;
+    if (r.cooldownS)  ro["cooldown_s"]  = r.cooldownS;
+    if (r.faultActive) ro["fault"] = true;
   }
 
   String json;
@@ -582,6 +589,8 @@ void handleGetConfig() {
     ro["equipment"]  = r.equipmentId;
     ro["enabled"]    = r.enabled;
     ro["triggered"]  = r.triggered;
+    if (r.durationS)  ro["duration_s"]  = r.durationS;
+    if (r.cooldownS)  ro["cooldown_s"]  = r.cooldownS;
   }
 
   String json;
@@ -924,8 +933,10 @@ void handleAddRule() {
   int16_t threshold = doc["threshold"] | 0;
   int16_t hyst      = doc["hysteresis"] | 0;
   bool enabled      = doc["enabled"] | true;
+  uint16_t durationS = doc["duration_s"] | 0;
+  uint16_t cooldownS = doc["cooldown_s"] | 0;
 
-  if (!config.addRule(id, name, sensor, condition, threshold, hyst, eqId, enabled)) {
+  if (!config.addRule(id, name, sensor, condition, threshold, hyst, eqId, enabled, durationS, cooldownS)) {
     server.send(409, "application/json", "{\"error\":\"rule exists or limit reached\"}");
     return;
   }
@@ -958,8 +969,10 @@ void handleUpdateRule() {
   int16_t threshold = doc["threshold"] | 0;
   int16_t hyst      = doc["hysteresis"] | 0;
   bool enabled      = doc["enabled"] | true;
+  uint16_t durationS = doc["duration_s"] | 0;
+  uint16_t cooldownS = doc["cooldown_s"] | 0;
 
-  if (!config.updateRule(id, name, sensor, condition, threshold, hyst, eqId, enabled)) {
+  if (!config.updateRule(id, name, sensor, condition, threshold, hyst, eqId, enabled, durationS, cooldownS)) {
     server.send(404, "application/json", "{\"error\":\"rule not found\"}");
     return;
   }
@@ -976,6 +989,56 @@ void handleDeleteRule() {
     server.send(404, "application/json", "{\"error\":\"rule not found\"}");
     return;
   }
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// =====================================================================
+//  HTTP: GET /api/action-log — recent automation actions
+// =====================================================================
+void handleActionLog() {
+  JsonDocument doc;
+  JsonArray arr = doc.to<JsonArray>();
+  for (int i = 0; i < actionLog.count; i++) {
+    int idx = (actionLog.head - actionLog.count + i + ACTION_LOG_SIZE) % ACTION_LOG_SIZE;
+    ActionLogEntry &e = actionLog.entries[idx];
+    JsonObject o = arr.add<JsonObject>();
+    o["ts"]        = e.timestamp / 1000;
+    o["rule"]      = e.ruleName;
+    o["action"]    = e.action;
+    o["equipment"] = e.equipment;
+    o["value"]     = serialized(String(e.valueX10 / 10.0, 1));
+  }
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+// =====================================================================
+//  HTTP: POST /api/override — toggle manual override for an equipment
+// =====================================================================
+void handleOverride() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) {
+    server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+    return;
+  }
+  const char *eqId = doc["id"] | "";
+  if (!eqId[0]) {
+    server.send(400, "application/json", "{\"error\":\"need equipment id\"}");
+    return;
+  }
+  Equipment *eq = config.findEquipment(eqId);
+  if (!eq || eq->outputIndex >= MAX_OUTPUTS) {
+    server.send(404, "application/json", "{\"error\":\"equipment not found or no relay\"}");
+    return;
+  }
+  bool override = doc["override"] | false;
+  outputs[eq->outputIndex].manualOverride = override;
+  actionLog.add("--", override ? "OVERRIDE" : "AUTO", eq->name, 0);
   server.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -1370,58 +1433,99 @@ void handleDeleteNode() {
 const uint32_t AUTOMATION_INTERVAL_MS = 5000;
 uint32_t lastAutomation = 0;
 
+void sendOutputCmd(OutputState &o, bool on) {
+  if (o.status == CMD_PENDING || o.status == CMD_SENT) return;
+  o.requestedOn = on;
+  o.status      = CMD_PENDING;
+  o.sentAt      = millis();
+  o.seq         = nextSeq++;
+  o.attempt     = 0;
+}
+
 void evaluateRules() {
+  uint32_t now = millis();
+  uint32_t telemetryAge = (lastTelemetryAt > 0) ? (now - lastTelemetryAt) : UINT32_MAX;
+  bool sensorFresh = nodeOnline && telemetryAge < 600000;  // 10 min
+
   for (int i = 0; i < config.ruleCount; i++) {
     AutomationRule &r = config.rules[i];
     if (!r.enabled) continue;
 
     Equipment *eq = config.findEquipment(r.equipmentId);
     if (!eq || eq->outputIndex >= MAX_OUTPUTS) continue;
+    OutputState &out = outputs[eq->outputIndex];
+
+    // Manual override — skip automation entirely
+    if (out.manualOverride) continue;
+
+    // Fault handling: if sensor data is stale/missing while rule is triggered, force off
+    if (!sensorFresh) {
+      if (r.triggered && !r.faultActive) {
+        r.faultActive = true;
+        r.triggered = false;
+        r.exceedSince = 0;
+        sendOutputCmd(out, false);
+        actionLog.add(r.name, "FAULT_OFF", eq->name, 0);
+        Serial.print("[Auto] Rule '"); Serial.print(r.name);
+        Serial.println("' FAULT -> equipment OFF (stale sensor)");
+      }
+      continue;
+    }
+
+    // Sensor came back — clear fault flag
+    if (r.faultActive) {
+      r.faultActive = false;
+      Serial.print("[Auto] Rule '"); Serial.print(r.name);
+      Serial.println("' sensor recovered");
+    }
 
     int16_t valueX10;
     if (r.sensor == 0)      valueX10 = (int16_t)(nodeTemperature * 10);
     else if (r.sensor == 1) valueX10 = (int16_t)(nodeHumidity * 10);
     else if (r.sensor == 2) {
-      if (nodeAnalogValue < 0) continue;  // no analog reading yet
-      valueX10 = (int16_t)(nodeAnalogValue * 1000L / 1023);  // 0-1000 = 0.0-100.0%
+      if (nodeAnalogValue < 0) continue;
+      valueX10 = (int16_t)(nodeAnalogValue * 1000L / 1023);
     }
     else continue;
 
-    bool shouldTrigger;
+    // Evaluate condition with hysteresis
+    bool conditionMet;
     if (r.condition == 0) {
-      // "above": trigger when value > threshold, release when value < threshold - hysteresis
-      shouldTrigger = r.triggered
+      conditionMet = r.triggered
         ? (valueX10 >= r.thresholdX10 - r.hysteresisX10)
         : (valueX10 > r.thresholdX10);
     } else {
-      // "below": trigger when value < threshold, release when value > threshold + hysteresis
-      shouldTrigger = r.triggered
+      conditionMet = r.triggered
         ? (valueX10 <= r.thresholdX10 + r.hysteresisX10)
         : (valueX10 < r.thresholdX10);
     }
 
-    if (shouldTrigger && !r.triggered) {
-      r.triggered = true;
-      if (outputs[eq->outputIndex].status != CMD_PENDING &&
-          outputs[eq->outputIndex].status != CMD_SENT) {
-        outputs[eq->outputIndex].requestedOn = true;
-        outputs[eq->outputIndex].status      = CMD_PENDING;
-        outputs[eq->outputIndex].sentAt      = millis();
-        outputs[eq->outputIndex].seq         = nextSeq++;
-        outputs[eq->outputIndex].attempt     = 0;
-        Serial.print("[Auto] Rule '"); Serial.print(r.name);
-        Serial.print("' TRIGGERED -> "); Serial.print(eq->name);
-        Serial.println(" ON");
+    // Duration tracking
+    if (conditionMet && !r.triggered) {
+      if (r.exceedSince == 0) r.exceedSince = now;
+      if (r.durationS > 0 && (now - r.exceedSince) < (uint32_t)r.durationS * 1000) {
+        continue;  // condition met but duration not yet satisfied
       }
-    } else if (!shouldTrigger && r.triggered) {
-      r.triggered = false;
-      if (outputs[eq->outputIndex].status != CMD_PENDING &&
-          outputs[eq->outputIndex].status != CMD_SENT) {
-        outputs[eq->outputIndex].requestedOn = false;
-        outputs[eq->outputIndex].status      = CMD_PENDING;
-        outputs[eq->outputIndex].sentAt      = millis();
-        outputs[eq->outputIndex].seq         = nextSeq++;
-        outputs[eq->outputIndex].attempt     = 0;
+      // Cooldown check
+      if (r.cooldownS > 0 && r.lastActionAt > 0 &&
+          (now - r.lastActionAt) < (uint32_t)r.cooldownS * 1000) {
+        continue;  // still in cooldown
+      }
+      r.triggered = true;
+      r.exceedSince = 0;
+      r.lastActionAt = now;
+      sendOutputCmd(out, true);
+      actionLog.add(r.name, "TRIGGER", eq->name, valueX10);
+      Serial.print("[Auto] Rule '"); Serial.print(r.name);
+      Serial.print("' TRIGGERED -> "); Serial.print(eq->name);
+      Serial.println(" ON");
+    } else if (!conditionMet) {
+      r.exceedSince = 0;
+      if (r.triggered) {
+        r.triggered = false;
+        r.lastActionAt = now;
+        sendOutputCmd(out, false);
+        actionLog.add(r.name, "RELEASE", eq->name, valueX10);
         Serial.print("[Auto] Rule '"); Serial.print(r.name);
         Serial.print("' RELEASED -> "); Serial.print(eq->name);
         Serial.println(" OFF");
@@ -1453,6 +1557,7 @@ void setup() {
     outputs[i].sentAt = 0;
     outputs[i].seq = 0;
     outputs[i].attempt = 0;
+    outputs[i].manualOverride = false;
   }
 
   // LittleFS
@@ -1524,6 +1629,8 @@ void setup() {
   server.on("/api/rules",              HTTP_POST,   handleAddRule);
   server.on("/api/rules",              HTTP_PUT,    handleUpdateRule);
   server.on("/api/rules",              HTTP_DELETE, handleDeleteRule);
+  server.on("/api/action-log",          HTTP_GET,    handleActionLog);
+  server.on("/api/override",            HTTP_POST,   handleOverride);
 
   // History API
   server.on("/api/history",            HTTP_GET,    handleHistory);

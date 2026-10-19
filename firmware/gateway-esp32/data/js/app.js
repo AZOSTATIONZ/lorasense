@@ -22,6 +22,7 @@ function showView(view) {
     clearInterval(pollTimer);
     clearInterval(historyTimer);
     loadConfig();
+    loadActionLog();
   } else if (view === 'studio') {
     clearInterval(pollTimer);
     clearInterval(historyTimer);
@@ -407,6 +408,8 @@ function drawDevices(s) {
       metaDiv.className = 'dev-meta';
       if (!hasOutput) {
         metaDiv.innerHTML = '<span class="state-off">No relay</span>';
+      } else if (d.override) {
+        metaDiv.innerHTML = '<span class="state-override">Manual override</span>';
       } else if (pending) {
         metaDiv.innerHTML = '<span class="state-pending">Sending…</span>';
       } else if (d.status === 'FAILED') {
@@ -416,6 +419,9 @@ function drawDevices(s) {
       }
       info.appendChild(metaDiv);
       row.appendChild(info);
+
+      var btnGroup = document.createElement('div');
+      btnGroup.className = 'dev-btns';
 
       var toggle = document.createElement('button');
       if (!hasOutput) {
@@ -427,7 +433,25 @@ function drawDevices(s) {
           toggle.onclick = function() { setDevice(id, on ? 'off' : 'on'); };
         })(d.id, d.on);
       }
-      row.appendChild(toggle);
+      btnGroup.appendChild(toggle);
+
+      if (hasOutput) {
+        var ovrBtn = document.createElement('button');
+        ovrBtn.className = 'btn-override' + (d.override ? ' active' : '');
+        ovrBtn.textContent = d.override ? '\u{1F6D1}' : '✋';
+        ovrBtn.title = d.override ? 'Resume automation' : 'Manual override';
+        (function(id, cur) {
+          ovrBtn.onclick = function() {
+            fetch('/api/override', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: id, override: !cur })
+            }).then(function() { refresh(); });
+          };
+        })(d.id, d.override);
+        btnGroup.appendChild(ovrBtn);
+      }
+      row.appendChild(btnGroup);
 
       section.appendChild(row);
     }
@@ -665,11 +689,18 @@ function renderRules(cfg) {
     var hyst = (r.hysteresis / 10).toFixed(1);
     var desc = sensorNames[r.sensor] + ' ' + condNames[r.condition] + ' ' +
               thresh + unitNames[r.sensor] + ' (±' + hyst + ')';
+    var extras = [];
+    if (r.duration_s) extras.push('hold ' + r.duration_s + 's');
+    if (r.cooldown_s) extras.push('cooldown ' + r.cooldown_s + 's');
+    var extraText = extras.length ? ' [' + extras.join(', ') + ']' : '';
+
+    var faultBadge = r.fault ? ' <span class="rule-fault">FAULT</span>' : '';
+    var activeBadge = r.triggered ? ' <span class="rule-active">ACTIVE</span>' : '';
 
     div.innerHTML =
       '<div class="rule-info">' +
-        '<div class="rule-name">' + escHtml(r.name) + (r.triggered ? ' <span class="rule-active">ACTIVE</span>' : '') + '</div>' +
-        '<div class="rule-desc">' + desc + ' → ' + escHtml(eqName) + '</div>' +
+        '<div class="rule-name">' + escHtml(r.name) + activeBadge + faultBadge + '</div>' +
+        '<div class="rule-desc">' + desc + extraText + ' → ' + escHtml(eqName) + '</div>' +
       '</div>';
 
     var toggleBtn = document.createElement('button');
@@ -726,7 +757,9 @@ document.getElementById('add-rule-btn').onclick = function() {
     threshold: Math.round(parseFloat(document.getElementById('rule-threshold').value) * 10),
     hysteresis: Math.round(parseFloat(document.getElementById('rule-hysteresis').value) * 10),
     equipment: eqId,
-    enabled: true
+    enabled: true,
+    duration_s: parseInt(document.getElementById('rule-duration').value) || 0,
+    cooldown_s: parseInt(document.getElementById('rule-cooldown').value) || 0
   };
 
   fetch('/api/rules', {
@@ -765,6 +798,38 @@ function deleteRule(id) {
   fetch('/api/rules?id=' + encodeURIComponent(id), { method: 'DELETE' })
     .then(function() { loadConfig(); });
 }
+
+// =====================================================================
+//  Action log
+// =====================================================================
+function loadActionLog() {
+  fetch('/api/action-log')
+    .then(function(res) { return res.json(); })
+    .then(function(entries) {
+      var list = document.getElementById('action-log-list');
+      if (!entries || entries.length === 0) {
+        list.innerHTML = '<div class="empty-hint">No actions recorded yet.</div>';
+        return;
+      }
+      var html = '<div class="action-log">';
+      for (var i = entries.length - 1; i >= 0; i--) {
+        var e = entries[i];
+        var cls = 'log-' + (e.action === 'TRIGGER' ? 'trigger' :
+                   e.action === 'RELEASE' ? 'release' :
+                   e.action === 'FAULT_OFF' ? 'fault' : 'info');
+        html += '<div class="log-entry ' + cls + '">' +
+          '<span class="log-action">' + e.action + '</span> ' +
+          '<span class="log-rule">' + escHtml(e.rule) + '</span> → ' +
+          escHtml(e.equipment) +
+          (e.value !== '0.0' ? ' (' + e.value + ')' : '') +
+          '<span class="log-time">' + formatUptime(e.ts) + '</span>' +
+        '</div>';
+      }
+      html += '</div>';
+      list.innerHTML = html;
+    });
+}
+document.getElementById('load-action-log-btn').onclick = loadActionLog;
 
 // =====================================================================
 //  Onboarding Wizard

@@ -26,4 +26,35 @@ struct OutputState {
   uint32_t  sentAt;
   uint8_t   seq;
   uint8_t   attempt;
+  bool      manualOverride;  // when true, automation rules skip this output
+};
+
+// --- Action log ring buffer ---
+const int ACTION_LOG_SIZE = 32;
+
+struct ActionLogEntry {
+  uint32_t timestamp;    // millis()
+  char     ruleName[32];
+  char     action[16];   // "TRIGGER", "RELEASE", "FAULT_OFF", "COOLDOWN", "OVERRIDE"
+  char     equipment[32];
+  int16_t  valueX10;
+};
+
+struct ActionLog {
+  ActionLogEntry entries[ACTION_LOG_SIZE];
+  int head;
+  int count;
+
+  ActionLog() : head(0), count(0) {}
+
+  void add(const char *rule, const char *act, const char *equip, int16_t val) {
+    ActionLogEntry &e = entries[head];
+    e.timestamp = millis();
+    strlcpy(e.ruleName, rule, sizeof(e.ruleName));
+    strlcpy(e.action, act, sizeof(e.action));
+    strlcpy(e.equipment, equip, sizeof(e.equipment));
+    e.valueX10 = val;
+    head = (head + 1) % ACTION_LOG_SIZE;
+    if (count < ACTION_LOG_SIZE) count++;
+  }
 };
