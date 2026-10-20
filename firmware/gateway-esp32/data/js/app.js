@@ -122,6 +122,14 @@ var ICO = {
 // Comprehensive environment profiles
 var PROFILES = {
   home: {
+    description: 'Indoor comfort monitoring and smart device control',
+    defaultRelayCount: 4,
+    idealRanges: { temperature_c: [18, 26], humidity_pct: [30, 60], analog_pct: [0, 100] },
+    tips: [
+      'Keep humidity between 30–60% to prevent mould and dry air discomfort.',
+      'Set cooling automation to start at 28 °C for energy-efficient comfort.',
+      'Place your sensor away from direct sunlight and air vents for accurate readings.'
+    ],
     terms: { zone: 'Room', zones: 'Rooms', sensor: 'Sensor', equipment: 'Device',
              addZone: 'Add Room', addEq: 'Add Device', noEq: 'No devices in this room',
              heroLabel: 'Home Comfort', wizZonePlaceholder: 'e.g. Living room' },
@@ -132,10 +140,22 @@ var PROFILES = {
     eqSuggestions: ['Ceiling light', 'Desk fan', 'Space heater', 'Air purifier'],
     presets: [
       { name: 'Comfort cooling', desc: 'Fan on when temp exceeds 28 °C', sensor: 0, cond: 1, thresh: 280, hyst: 10, cat: 'fan' },
-      { name: 'Humidity alert', desc: 'Dehumidifier when humidity > 70%', sensor: 1, cond: 1, thresh: 700, hyst: 20, cat: 'other' }
+      { name: 'Humidity alert', desc: 'Dehumidifier when humidity > 70%', sensor: 1, cond: 1, thresh: 700, hyst: 20, cat: 'other' },
+      { name: 'Winter heating', desc: 'Heater on when temp drops below 18 °C', sensor: 0, cond: 0, thresh: 180, hyst: 15, cat: 'heating' },
+      { name: 'Night light', desc: 'Light on when ambient light < 20%', sensor: 2, cond: 0, thresh: 200, hyst: 30, cat: 'lighting' },
+      { name: 'Air quality', desc: 'Purifier on when analog sensor > 60%', sensor: 2, cond: 1, thresh: 600, hyst: 50, cat: 'other' }
     ]
   },
   farm: {
+    description: 'Crop monitoring, irrigation, and livestock environment control',
+    defaultRelayCount: 4,
+    idealRanges: { temperature_c: [15, 35], humidity_pct: [40, 80], analog_pct: [30, 70] },
+    tips: [
+      'Soil moisture below 30% indicates drought stress for most crops.',
+      'Ventilate livestock areas when temperature exceeds 30 °C to prevent heat stress.',
+      'Schedule irrigation for early morning to reduce evaporation loss.',
+      'Monitor humidity in storage areas to prevent grain and feed spoilage.'
+    ],
     terms: { zone: 'Field', zones: 'Fields', sensor: 'Sensor', equipment: 'Equipment',
              addZone: 'Add Field', addEq: 'Add Equipment', noEq: 'No equipment in this field',
              heroLabel: 'Field Conditions', wizZonePlaceholder: 'e.g. North paddock' },
@@ -146,10 +166,22 @@ var PROFILES = {
     eqSuggestions: ['Irrigation pump', 'Ventilation fan', 'Feed dispenser', 'Water heater'],
     presets: [
       { name: 'Irrigation trigger', desc: 'Pump on when soil moisture < 30%', sensor: 2, cond: 0, thresh: 300, hyst: 50, cat: 'irrigation' },
-      { name: 'Heat protection', desc: 'Misting when temp > 35 °C', sensor: 0, cond: 1, thresh: 350, hyst: 20, cat: 'irrigation' }
+      { name: 'Heat protection', desc: 'Misting when temp > 35 °C', sensor: 0, cond: 1, thresh: 350, hyst: 20, cat: 'irrigation' },
+      { name: 'Frost alert', desc: 'Heater on when temp drops below 2 °C', sensor: 0, cond: 0, thresh: 20, hyst: 10, cat: 'heating' },
+      { name: 'Barn ventilation', desc: 'Fan on when humidity exceeds 75%', sensor: 1, cond: 1, thresh: 750, hyst: 30, cat: 'fan' },
+      { name: 'Feed dispenser', desc: 'Dispenser active when temp is above 10 °C', sensor: 0, cond: 1, thresh: 100, hyst: 20, cat: 'other' }
     ]
   },
   greenhouse: {
+    description: 'Precision climate control for plant propagation and growth',
+    defaultRelayCount: 4,
+    idealRanges: { temperature_c: [18, 30], humidity_pct: [50, 80], analog_pct: [40, 70] },
+    tips: [
+      'Maintain 60–80% humidity for tropical plants; 50–65% for temperate species.',
+      'Ventilate above 30 °C to prevent heat damage and encourage air circulation.',
+      'Use shade motors or grow lights to extend or manage photoperiod.',
+      'Keep soil moisture at 40–70% for optimal root development.'
+    ],
     terms: { zone: 'Bay', zones: 'Bays', sensor: 'Sensor', equipment: 'Equipment',
              addZone: 'Add Bay', addEq: 'Add Equipment', noEq: 'No equipment in this bay',
              heroLabel: 'Climate Status', wizZonePlaceholder: 'e.g. Propagation bay' },
@@ -161,10 +193,21 @@ var PROFILES = {
     presets: [
       { name: 'Ventilation cycle', desc: 'Exhaust when temp > 30 °C', sensor: 0, cond: 1, thresh: 300, hyst: 15, cat: 'fan' },
       { name: 'Auto watering', desc: 'Irrigation when moisture < 40%', sensor: 2, cond: 0, thresh: 400, hyst: 50, cat: 'irrigation' },
-      { name: 'Frost guard', desc: 'Heater on below 5 °C', sensor: 0, cond: 0, thresh: 50, hyst: 10, cat: 'heating' }
+      { name: 'Frost guard', desc: 'Heater on below 5 °C', sensor: 0, cond: 0, thresh: 50, hyst: 10, cat: 'heating' },
+      { name: 'Humidity misting', desc: 'Mist spray when humidity < 55%', sensor: 1, cond: 0, thresh: 550, hyst: 30, cat: 'irrigation' },
+      { name: 'Night cooling', desc: 'Fan on if night temp exceeds 25 °C', sensor: 0, cond: 1, thresh: 250, hyst: 10, cat: 'fan' }
     ]
   },
   industrial: {
+    description: 'Process monitoring, safety alarms, and equipment protection',
+    defaultRelayCount: 8,
+    idealRanges: { temperature_c: [10, 40], humidity_pct: [20, 60], analog_pct: [0, 80] },
+    tips: [
+      'Set safety alarms with low hysteresis to catch rapid temperature excursions.',
+      'Monitor humidity in electrical rooms to prevent condensation on switchgear.',
+      'Use multiple relay channels to separate alarm and control circuits.',
+      'Review process sensor analog thresholds against your equipment datasheets.'
+    ],
     terms: { zone: 'Area', zones: 'Areas', sensor: 'Instrument', equipment: 'Asset',
              addZone: 'Add Area', addEq: 'Add Asset', noEq: 'No assets in this area',
              heroLabel: 'Process Status', wizZonePlaceholder: 'e.g. Production floor' },
@@ -175,10 +218,22 @@ var PROFILES = {
     eqSuggestions: ['Cooling system', 'Alarm relay', 'Exhaust blower', 'Conveyor motor'],
     presets: [
       { name: 'Over-temp alarm', desc: 'Alarm when temp > 45 °C', sensor: 0, cond: 1, thresh: 450, hyst: 20, cat: 'other' },
-      { name: 'Process cooling', desc: 'Cooling on above 38 °C', sensor: 0, cond: 1, thresh: 380, hyst: 15, cat: 'fan' }
+      { name: 'Process cooling', desc: 'Cooling on above 38 °C', sensor: 0, cond: 1, thresh: 380, hyst: 15, cat: 'fan' },
+      { name: 'Humidity guard', desc: 'Exhaust fan when humidity > 65%', sensor: 1, cond: 1, thresh: 650, hyst: 20, cat: 'fan' },
+      { name: 'Low-temp warning', desc: 'Heater on when temp drops below 10 °C', sensor: 0, cond: 0, thresh: 100, hyst: 15, cat: 'heating' },
+      { name: 'Process sensor alert', desc: 'Alarm when analog exceeds 80%', sensor: 2, cond: 1, thresh: 800, hyst: 30, cat: 'other' }
     ]
   },
   lab: {
+    description: 'Precise environmental control for research and analysis',
+    defaultRelayCount: 4,
+    idealRanges: { temperature_c: [20, 25], humidity_pct: [30, 55], analog_pct: [0, 50] },
+    tips: [
+      'Lab standards typically require 20–25 °C and 30–55% RH for instrument accuracy.',
+      'Keep fume hood extraction running whenever chemicals are present.',
+      'Use tight hysteresis values (1–2 °C) for critical temperature control.',
+      'Monitor analog inputs from instrument outputs to detect drift early.'
+    ],
     terms: { zone: 'Station', zones: 'Stations', sensor: 'Instrument', equipment: 'Apparatus',
              addZone: 'Add Station', addEq: 'Add Apparatus', noEq: 'No apparatus at this station',
              heroLabel: 'Lab Environment', wizZonePlaceholder: 'e.g. Analysis bench' },
@@ -189,10 +244,20 @@ var PROFILES = {
     eqSuggestions: ['Fume hood fan', 'Equipment power', 'Chiller unit', 'UV lamp'],
     presets: [
       { name: 'Temp stability', desc: 'Alert if temp leaves 20–25 °C', sensor: 0, cond: 1, thresh: 250, hyst: 10, cat: 'other' },
-      { name: 'Humidity control', desc: 'Dehumidifier above 55%', sensor: 1, cond: 1, thresh: 550, hyst: 20, cat: 'other' }
+      { name: 'Humidity control', desc: 'Dehumidifier above 55%', sensor: 1, cond: 1, thresh: 550, hyst: 20, cat: 'other' },
+      { name: 'Fume extraction', desc: 'Hood fan on when analog > 30%', sensor: 2, cond: 1, thresh: 300, hyst: 20, cat: 'fan' },
+      { name: 'Cold storage', desc: 'Chiller on when temp exceeds 8 °C', sensor: 0, cond: 1, thresh: 80, hyst: 10, cat: 'other' },
+      { name: 'UV sterilisation', desc: 'UV lamp on when humidity < 40%', sensor: 1, cond: 0, thresh: 400, hyst: 30, cat: 'lighting' }
     ]
   },
   custom: {
+    description: 'Flexible setup — configure sensors and rules for your use case',
+    defaultRelayCount: 4,
+    idealRanges: { temperature_c: [0, 50], humidity_pct: [0, 100], analog_pct: [0, 100] },
+    tips: [
+      'Start by adding your sensors in Hardware Studio, then create automation rules.',
+      'Use the relay module settings to match your physical relay channel count.'
+    ],
     terms: { zone: 'Zone', zones: 'Zones', sensor: 'Sensor', equipment: 'Equipment',
              addZone: 'Add Zone', addEq: 'Add Equipment', noEq: 'No equipment in this zone',
              heroLabel: 'Sensor Readings', wizZonePlaceholder: 'e.g. Main area' },
@@ -308,6 +373,41 @@ function qualityBadge(q) {
   return '<span class="quality-badge ' + cls + '">' + label + '</span>';
 }
 
+function getRangeBadge(key, val) {
+  if (val === '--' || !currentProfile.idealRanges) return '';
+  var range = currentProfile.idealRanges[key];
+  if (!range) return '';
+  var num = parseFloat(val);
+  if (isNaN(num)) return '';
+  var inRange = num >= range[0] && num <= range[1];
+  return '<span class="hero-range ' + (inRange ? 'in-range' : 'out-of-range') + '">' +
+    (inRange ? 'In range' : (num < range[0] ? 'Below' : 'Above') + ' ideal') + '</span>';
+}
+
+function drawEnvContext() {
+  var box = document.getElementById('env-context');
+  if (!box || !currentProfile) return;
+  var desc = document.getElementById('env-desc');
+  var tipsList = document.getElementById('env-tips-list');
+  if (currentProfile.description) {
+    desc.textContent = currentProfile.description;
+    box.style.display = '';
+  } else {
+    box.style.display = 'none';
+    return;
+  }
+  if (currentProfile.tips && currentProfile.tips.length > 0) {
+    var html = '';
+    for (var i = 0; i < currentProfile.tips.length; i++) {
+      html += '<li>' + escHtml(currentProfile.tips[i]) + '</li>';
+    }
+    tipsList.innerHTML = html;
+    document.getElementById('env-tips').style.display = '';
+  } else {
+    document.getElementById('env-tips').style.display = 'none';
+  }
+}
+
 function drawSensorHero(s) {
   var box = document.getElementById('sensor-hero');
   var sensors = s.sensors;
@@ -370,6 +470,8 @@ function drawSensorHero(s) {
       var spark = sparklineSvg(rd.key);
       var sparkHtml = spark ? '<div class="hero-spark">' + spark + '</div>' : '';
 
+      var rangeBadge = getRangeBadge(rd.key, val);
+
       cards.push({ key: rd.key, html: '<div class="hero-card' + qClass + warnCls + '" data-sensor-key="' + rd.key + '" tabindex="0" role="button" aria-label="' + escHtml(sensorLabel) + ' ' + rd.label + ' ' + val + escHtml(unitLabel) + '">' +
         '<div class="hero-top">' +
           '<div class="hero-icon">' + getSensorIcon(rd.key) + '</div>' +
@@ -378,6 +480,7 @@ function drawSensorHero(s) {
         '</div>' +
         '<div class="hero-value">' + val + '<span class="hero-unit">' + escHtml(unitLabel) + '</span></div>' +
         '<div class="hero-label">' + escHtml(sensorLabel) + ' — ' + rd.label + '</div>' +
+        rangeBadge +
         sparkHtml +
         (ageText ? '<div class="hero-age">' + ageText + '</div>' : '') +
         statusHtml +
@@ -1101,6 +1204,7 @@ function refresh() {
         applyTheme(s.env_type);
         currentProfile = PROFILES[s.env_type] || PROFILES.custom;
         terms = currentProfile.terms;
+        drawEnvContext();
       }
       hasSensors = s.sensors && s.sensors.length > 0;
       drawSensorHero(s);
@@ -1655,7 +1759,9 @@ function updateProfileHint() {
     presetHtml = '<br><span style="color:var(--muted)">Automation ideas: ' +
       prof.presets.map(function(p){ return p.name; }).join(', ') + '</span>';
   }
+  var descHtml = prof.description ? '<span style="color:var(--muted)">' + escHtml(prof.description) + '</span><br>' : '';
   hint.innerHTML = '<strong>Suggested for ' + wizData.env_type + ':</strong><br>' +
+    descHtml +
     '<span style="color:var(--muted)">Sensors: ' + envP.sensors.join(', ') + '<br>' +
     'Equipment: ' + envP.equipment.join(', ') + '</span>' + presetHtml + '<br>' +
     '<small>These are suggestions — you choose what to add in the next steps.</small>';

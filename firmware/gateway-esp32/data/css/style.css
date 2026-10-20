@@ -916,6 +916,31 @@ body:has(.quick-bar.visible) main { padding-bottom: 80px; }
   from { opacity: 1; transform: translateX(0); }
   to   { opacity: 0; transform: translateX(40px); }
 }
+/* Phase 23: Environment context and range indicators */
+.env-context { padding: 0 4px; margin-bottom: 8px; }
+.env-desc {
+  font-size: 13px; color: var(--muted); text-align: center;
+  padding: 8px 0 4px; line-height: 1.4;
+}
+.env-tips { margin: 4px 0 8px; }
+.env-tips summary {
+  font-size: 12px; color: var(--accent); cursor: pointer;
+  font-weight: 600; padding: 6px 0; user-select: none;
+}
+.env-tips summary:hover { text-decoration: underline; }
+.env-tips ul {
+  margin: 4px 0 0; padding: 0 0 0 20px;
+  font-size: 12px; color: var(--muted); line-height: 1.6;
+}
+.env-tips li { margin-bottom: 4px; }
+.hero-range {
+  display: inline-block; font-size: 10px; font-weight: 600;
+  padding: 1px 6px; border-radius: 8px; margin-top: 2px;
+  line-height: 1.4;
+}
+.hero-range.in-range { background: rgba(22,163,74,0.12); color: var(--on); }
+.hero-range.out-of-range { background: rgba(220,38,38,0.12); color: var(--fail); }
+
 /* Phase 22: Relay module config */
 .relay-map { margin: 12px 0 8px; }
 .relay-map-row {
