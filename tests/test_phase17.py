@@ -92,7 +92,9 @@ check(".detail-thresh-fill style", '.detail-thresh-fill' in css)
 check(".detail-thresh-label style", '.detail-thresh-label' in css)
 
 # Hero card tap affordance
-check("hero-card cursor pointer", 'cursor' in css.split('.hero-card')[1].split('}')[0] and 'pointer' in css.split('.hero-card')[1].split('}')[0])
+hero_card_idx = css.index('\n.hero-card {') + 1 if '\n.hero-card {' in css else css.index('\n.hero-card{') + 1
+hero_card_block = css[hero_card_idx:].split('}')[0]
+check("hero-card cursor pointer", 'cursor' in hero_card_block and 'pointer' in hero_card_block)
 check("hero-card active scale", '.hero-card:active' in css)
 
 # Stats grid layout

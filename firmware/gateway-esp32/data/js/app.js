@@ -363,7 +363,7 @@ function drawSensorHero(s) {
       var spark = sparklineSvg(rd.key);
       var sparkHtml = spark ? '<div class="hero-spark">' + spark + '</div>' : '';
 
-      cards.push({ key: rd.key, html: '<div class="hero-card' + qClass + warnCls + '" data-sensor-key="' + rd.key + '">' +
+      cards.push({ key: rd.key, html: '<div class="hero-card' + qClass + warnCls + '" data-sensor-key="' + rd.key + '" tabindex="0" role="button" aria-label="' + escHtml(sensorLabel) + ' ' + rd.label + ' ' + val + escHtml(unitLabel) + '">' +
         '<div class="hero-top">' +
           '<div class="hero-icon">' + getSensorIcon(rd.key) + '</div>' +
           trendHtml +
@@ -2707,20 +2707,42 @@ function closeSensorDetail() {
   if (!detailOverlay) return;
 
   detailOverlay.addEventListener('click', function(e) {
-    if (e.target === detailOverlay) closeSensorDetail();
+    if (e.target === detailOverlay) {
+      closeSensorDetail();
+      if (lastFocusedCard) lastFocusedCard.focus();
+    }
   });
 
   var heroBox = document.getElementById('sensor-hero');
+  var lastFocusedCard = null;
   if (heroBox) {
     heroBox.addEventListener('click', function(e) {
       var card = e.target.closest('.hero-card[data-sensor-key]');
-      if (card) openSensorDetail(card.getAttribute('data-sensor-key'));
+      if (card) {
+        lastFocusedCard = card;
+        openSensorDetail(card.getAttribute('data-sensor-key'));
+        detailCard.focus();
+      }
+    });
+    heroBox.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        var card = e.target.closest('.hero-card[data-sensor-key]');
+        if (card) {
+          e.preventDefault();
+          lastFocusedCard = card;
+          openSensorDetail(card.getAttribute('data-sensor-key'));
+          detailCard.focus();
+        }
+      }
     });
   }
+
+  detailCard.setAttribute('tabindex', '-1');
 
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape' && detailOverlay.classList.contains('active')) {
       closeSensorDetail();
+      if (lastFocusedCard) lastFocusedCard.focus();
     }
   });
 })();

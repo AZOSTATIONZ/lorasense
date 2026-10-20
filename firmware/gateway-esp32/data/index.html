@@ -11,21 +11,22 @@
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-<header>
+<a class="skip-link" href="#view-dashboard">Skip to content</a>
+<header role="banner">
   <div class="header-row">
     <div>
       <h1 id="env-name">LoRaSense</h1>
       <div class="sub" id="env-sub">Local monitoring &amp; control</div>
     </div>
     <div style="display:flex;gap:6px">
-      <button class="icon-btn" id="dark-mode-btn" title="Toggle dark mode">
+      <button class="icon-btn" id="dark-mode-btn" title="Toggle dark mode" aria-label="Toggle dark mode">
         <svg id="dm-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path id="dm-sun" d="M12 3v1m0 16v1m-7.07-2.93l.71.71M5.64 5.64l-.71.71M3 12h1m16 0h1m-2.93 7.07l-.71-.71M18.36 5.64l.71-.71"/><circle cx="12" cy="12" r="4"/></svg>
       </button>
-      <button class="icon-btn" id="settings-btn" title="Settings">&#9881;</button>
+      <button class="icon-btn" id="settings-btn" title="Settings" aria-label="Settings">&#9881;</button>
     </div>
   </div>
 </header>
-<main>
+<main role="main">
   <div class="pull-indicator" id="pull-indicator">
     <svg class="pull-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v6m0 0l-3-3m3 3l3-3"/><circle cx="12" cy="12" r="10" opacity="0.3"/></svg>
   </div>
@@ -188,22 +189,22 @@
   </div>
 
   <!-- Sensor detail overlay -->
-  <div class="detail-overlay" id="detail-overlay">
+  <div class="detail-overlay" id="detail-overlay" role="dialog" aria-modal="true" aria-label="Sensor detail">
     <div class="detail-card" id="detail-card"></div>
   </div>
 
   <!-- Dashboard view -->
   <div id="view-dashboard">
-    <div class="sensor-hero" id="sensor-hero">
+    <div class="sensor-hero" id="sensor-hero" role="region" aria-label="Sensor readings">
       <div class="hero-card skeleton-card"><div class="skel skel-icon"></div><div class="skel skel-value"></div><div class="skel skel-label"></div></div>
       <div class="hero-card skeleton-card"><div class="skel skel-icon"></div><div class="skel skel-value"></div><div class="skel skel-label"></div></div>
       <div class="hero-card skeleton-card"><div class="skel skel-icon"></div><div class="skel skel-value"></div><div class="skel skel-label"></div></div>
     </div>
     <div class="stats-row" id="stats-row" style="display:none"></div>
-    <div class="status-bar" id="status-bar">
+    <div class="status-bar" id="status-bar" role="status" aria-live="polite">
       <div class="skel skel-status-line"></div>
     </div>
-    <div class="health-strip" id="health-strip"></div>
+    <div class="health-strip" id="health-strip" aria-label="Connection health"></div>
     <div class="sect-wrap" id="sect-chart">
       <div class="sect-hdr" data-sect="sect-chart">
         <span class="sect-arrow" id="arrow-sect-chart">&#9662;</span>
@@ -526,7 +527,7 @@
 </main>
 
 <!-- Toast notifications -->
-<div class="toast-container" id="toast-container"></div>
+<div class="toast-container" id="toast-container" role="alert" aria-live="assertive" aria-atomic="false"></div>
 
 <script src="/js/app.js"></script>
 </body>
