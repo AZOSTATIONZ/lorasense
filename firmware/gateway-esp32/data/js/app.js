@@ -416,6 +416,63 @@ function drawStatusBar(s) {
     '<div class="status-item">' + ICO.clock() + ' ' + formatUptime(s.uptime_s) + '</div>';
 }
 
+var lastFetchTime = 0;
+var avgLatency = 0;
+
+function signalBarsHtml(rssi) {
+  var level = 0;
+  if (rssi >= -60) level = 5;
+  else if (rssi >= -70) level = 4;
+  else if (rssi >= -80) level = 3;
+  else if (rssi >= -90) level = 2;
+  else if (rssi >= -100) level = 1;
+  var bars = '';
+  for (var i = 1; i <= 5; i++) {
+    var cls = 'signal-bar';
+    if (i <= level) {
+      cls += level >= 3 ? ' active' : level >= 2 ? ' warn' : ' fail';
+    }
+    bars += '<div class="' + cls + '"></div>';
+  }
+  return '<div class="signal-bars">' + bars + '</div>';
+}
+
+function drawHealthStrip(s) {
+  var strip = document.getElementById('health-strip');
+  if (!strip) return;
+
+  var pulseClass = s.node_online ? 'conn-pulse' : 'conn-pulse offline';
+  var nodeLabel = s.node_online ? 'Online' : 'Offline';
+
+  var signalCard = '';
+  if (s.node_online && s.rssi !== undefined) {
+    signalCard = '<div class="health-card">' +
+      '<div class="health-icon">' + signalBarsHtml(s.rssi) + '</div>' +
+      '<div class="health-body"><div class="health-label">Signal</div>' +
+      '<div class="health-val">' + s.rssi + ' dBm</div></div></div>';
+  }
+
+  var uptimeCard = '<div class="health-card">' +
+    '<div class="health-icon">' + ICO.clock() + '</div>' +
+    '<div class="health-body"><div class="health-label">Uptime</div>' +
+    '<div class="health-val">' + formatUptime(s.uptime_s) + '</div></div></div>';
+
+  var latencyCard = '';
+  if (avgLatency > 0) {
+    latencyCard = '<div class="health-card">' +
+      '<div class="health-icon">' + ICO.activity() + '</div>' +
+      '<div class="health-body"><div class="health-label">Latency</div>' +
+      '<div class="health-val">' + avgLatency + ' ms</div></div></div>';
+  }
+
+  var nodeCard = '<div class="health-card">' +
+    '<div class="' + pulseClass + '"></div>' +
+    '<div class="health-body"><div class="health-label">Node</div>' +
+    '<div class="health-val">' + nodeLabel + '</div></div></div>';
+
+  strip.innerHTML = nodeCard + signalCard + uptimeCard + latencyCard;
+}
+
 // =====================================================================
 //  Phase 11: Trend engine, sparklines, threshold warnings, stats
 // =====================================================================
@@ -970,9 +1027,12 @@ document.getElementById('reconnect-now-btn').onclick = function() {
 };
 
 function refresh() {
+  lastFetchTime = Date.now();
   fetch('/api/state')
     .then(function(res) { return res.json(); })
     .then(function(s) {
+      var latency = Date.now() - lastFetchTime;
+      avgLatency = avgLatency ? Math.round(avgLatency * 0.7 + latency * 0.3) : latency;
       var wasDisconnected = failCount >= 3;
       failCount = 0;
       document.getElementById('banner').style.display = 'none';
@@ -990,6 +1050,7 @@ function refresh() {
       hasSensors = s.sensors && s.sensors.length > 0;
       drawSensorHero(s);
       drawStatusBar(s);
+      drawHealthStrip(s);
       drawActiveRules(s);
       drawDevices(s);
       lastQuickDevices = s.devices;

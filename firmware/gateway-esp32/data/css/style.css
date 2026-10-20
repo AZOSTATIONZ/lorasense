@@ -162,6 +162,43 @@ main { padding: 8px 16px 32px; max-width: 640px; margin: 0 auto; }
 .sync-pending { color: var(--pending); }
 .status-item { display: flex; align-items: center; gap: 2px; }
 .status-bar .spacer { flex: 1; }
+/* Phase 19: Health strip */
+.health-strip {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px; margin-bottom: 14px;
+}
+.health-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 10px 12px;
+  display: flex; align-items: center; gap: 10px;
+}
+.health-icon { flex-shrink: 0; color: var(--muted); }
+.health-icon svg { width: 20px; height: 20px; }
+.health-body { min-width: 0; }
+.health-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
+.health-val { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.signal-bars { display: flex; align-items: flex-end; gap: 2px; height: 16px; }
+.signal-bar {
+  width: 4px; border-radius: 1px;
+  background: var(--border); transition: background 0.3s ease;
+}
+.signal-bar.active { background: var(--on); }
+.signal-bar.warn { background: var(--pending); }
+.signal-bar.fail { background: var(--fail); }
+.signal-bar:nth-child(1) { height: 4px; }
+.signal-bar:nth-child(2) { height: 7px; }
+.signal-bar:nth-child(3) { height: 10px; }
+.signal-bar:nth-child(4) { height: 13px; }
+.signal-bar:nth-child(5) { height: 16px; }
+.conn-pulse {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--on); flex-shrink: 0;
+  animation: conn-blink 2s ease-in-out infinite;
+}
+.conn-pulse.offline { background: var(--fail); animation: none; }
+@keyframes conn-blink {
+  0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+}
 
 /* Active rules */
 .active-rule-bar {
