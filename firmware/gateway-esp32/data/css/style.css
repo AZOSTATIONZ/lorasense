@@ -800,9 +800,6 @@ button:disabled { opacity: 0.5; cursor: wait; }
 }
 
 /* Phase 12: Smooth card entrance */
-.hero-card {
-  transition: border-color 0.3s, box-shadow 0.3s, opacity 0.3s;
-}
 .device {
   transition: background 0.2s, transform 0.1s;
 }
@@ -918,11 +915,47 @@ body:has(.quick-bar.visible) main { padding-bottom: 80px; }
   from { opacity: 1; transform: translateX(0); }
   to   { opacity: 0; transform: translateX(40px); }
 }
+/* Phase 21: Micro-interactions */
+.hero-card {
+  transition: border-color 0.3s, box-shadow 0.3s, opacity 0.3s, transform 0.2s ease;
+}
+.hero-card:hover { transform: translateY(-2px); }
+.hero-card:active { transform: scale(0.97); }
+@keyframes card-enter {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.hero-card.card-entering {
+  animation: card-enter 0.35s ease both;
+}
+.hero-value.value-flash {
+  animation: val-flash 0.4s ease;
+}
+@keyframes val-flash {
+  0% { color: var(--accent); transform: scale(1.08); }
+  100% { color: var(--text); transform: scale(1); }
+}
+.status-dot.dot-pulse {
+  animation: dot-state-pulse 0.5s ease;
+}
+@keyframes dot-state-pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.6); }
+  100% { transform: scale(1); }
+}
+.health-val.health-val-flash {
+  animation: val-flash 0.4s ease;
+}
 @media (prefers-reduced-motion: reduce) {
   .toast { animation-duration: 0.01s; }
   .toast.toast-out { animation-duration: 0.01s; }
   .detail-overlay { transition-duration: 0.01s; }
   .detail-card { transition-duration: 0.01s; }
+  .hero-card.card-entering { animation-duration: 0.01s; }
+  .hero-value.value-flash { animation-duration: 0.01s; }
+  .status-dot.dot-pulse { animation-duration: 0.01s; }
+  .health-val.health-val-flash { animation-duration: 0.01s; }
+  .hero-card:hover { transform: none; }
 }
 
 /* Phase 17: Sensor detail overlay */

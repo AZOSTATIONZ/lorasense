@@ -54,6 +54,9 @@ var historyTimer = null;
 var currentView = 'dashboard';
 var configData = null;
 var lastState = null;
+var prevValues = {};
+var heroFirstDraw = true;
+var prevNodeOnline = null;
 
 // Theme mapping: environment type -> CSS theme class
 var THEME_MAP = {
@@ -386,9 +389,36 @@ function drawSensorHero(s) {
     return ai - bi;
   });
 
+  var newValues = {};
+  for (var c = 0; c < cards.length; c++) {
+    var m = cards[c].html.match(/class="hero-value">([^<]+)</);
+    if (m) newValues[cards[c].key] = m[1];
+  }
+
   var html = '';
   for (var c = 0; c < cards.length; c++) html += cards[c].html;
   box.innerHTML = html;
+
+  var allCards = box.querySelectorAll('.hero-card[data-sensor-key]');
+  if (heroFirstDraw) {
+    for (var j = 0; j < allCards.length; j++) {
+      allCards[j].classList.add('card-entering');
+      allCards[j].style.animationDelay = (j * 80) + 'ms';
+    }
+    heroFirstDraw = false;
+  } else {
+    for (var j = 0; j < allCards.length; j++) {
+      var k = allCards[j].getAttribute('data-sensor-key');
+      if (prevValues[k] && newValues[k] && prevValues[k] !== newValues[k]) {
+        var vEl = allCards[j].querySelector('.hero-value');
+        if (vEl) {
+          vEl.classList.add('value-flash');
+          vEl.addEventListener('animationend', function() { this.classList.remove('value-flash'); });
+        }
+      }
+    }
+  }
+  prevValues = newValues;
 }
 
 function drawStatusBar(s) {
@@ -414,6 +444,15 @@ function drawStatusBar(s) {
     ageItem +
     '<div class="status-item">' + ICO.signal() + ' ' + rssiText + '</div>' +
     '<div class="status-item">' + ICO.clock() + ' ' + formatUptime(s.uptime_s) + '</div>';
+
+  if (prevNodeOnline !== null && prevNodeOnline !== s.node_online) {
+    var dot = bar.querySelector('.status-dot');
+    if (dot) {
+      dot.classList.add('dot-pulse');
+      dot.addEventListener('animationend', function() { this.classList.remove('dot-pulse'); });
+    }
+  }
+  prevNodeOnline = s.node_online;
 }
 
 var lastFetchTime = 0;
@@ -470,7 +509,19 @@ function drawHealthStrip(s) {
     '<div class="health-body"><div class="health-label">Node</div>' +
     '<div class="health-val">' + nodeLabel + '</div></div></div>';
 
+  var oldVals = strip.querySelectorAll('.health-val');
+  var oldTexts = [];
+  for (var v = 0; v < oldVals.length; v++) oldTexts.push(oldVals[v].textContent);
+
   strip.innerHTML = nodeCard + signalCard + uptimeCard + latencyCard;
+
+  var newVals = strip.querySelectorAll('.health-val');
+  for (var v = 0; v < newVals.length; v++) {
+    if (oldTexts[v] && oldTexts[v] !== newVals[v].textContent) {
+      newVals[v].classList.add('health-val-flash');
+      newVals[v].addEventListener('animationend', function() { this.classList.remove('health-val-flash'); });
+    }
+  }
 }
 
 // =====================================================================
