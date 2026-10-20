@@ -53,6 +53,7 @@ var pollTimer = null;
 var historyTimer = null;
 var currentView = 'dashboard';
 var configData = null;
+var lastState = null;
 
 // Theme mapping: environment type -> CSS theme class
 var THEME_MAP = {
@@ -359,7 +360,7 @@ function drawSensorHero(s) {
       var spark = sparklineSvg(rd.key);
       var sparkHtml = spark ? '<div class="hero-spark">' + spark + '</div>' : '';
 
-      cards.push({ key: rd.key, html: '<div class="hero-card' + qClass + warnCls + '">' +
+      cards.push({ key: rd.key, html: '<div class="hero-card' + qClass + warnCls + '" data-sensor-key="' + rd.key + '">' +
         '<div class="hero-top">' +
           '<div class="hero-icon">' + getSensorIcon(rd.key) + '</div>' +
           trendHtml +
@@ -953,6 +954,7 @@ function refresh() {
       document.getElementById('banner').style.display = 'none';
       hideReconnectOverlay();
       if (wasDisconnected) showToast('Connection restored', 'success');
+      lastState = s;
       if (s.env_name) {
         document.getElementById('env-name').textContent = s.env_name;
       }
@@ -2474,3 +2476,166 @@ function dismissToast(toast) {
     if (toast.parentNode) toast.parentNode.removeChild(toast);
   }, 300);
 }
+
+// =====================================================================
+//  Phase 17: Tap-to-expand sensor detail cards
+// =====================================================================
+var detailOverlay = null;
+var detailCard = null;
+
+function detailSparklineSvg(key, w, h) {
+  if (!chartData || chartData.length < 3) return '';
+  var field = key === 'temperature_c' ? 'tc' : key === 'humidity_pct' ? 'h' : null;
+  if (!field) return '';
+  var pts = chartData.slice(-60);
+  var vMin = Infinity, vMax = -Infinity;
+  for (var i = 0; i < pts.length; i++) {
+    if (pts[i][field] < vMin) vMin = pts[i][field];
+    if (pts[i][field] > vMax) vMax = pts[i][field];
+  }
+  var range = vMax - vMin || 1;
+  var coords = [];
+  for (var i = 0; i < pts.length; i++) {
+    var x = (i / (pts.length - 1)) * w;
+    var y = h - ((pts[i][field] - vMin) / range) * (h - 4) - 2;
+    coords.push(x.toFixed(1) + ',' + y.toFixed(1));
+  }
+  var color = key === 'temperature_c' ? '#ef4444' : '#3b82f6';
+  return '<svg class="detail-spark" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
+    '<polyline points="' + coords.join(' ') + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round"/>' +
+    '</svg>';
+}
+
+function getThresholdProximity(key, value) {
+  if (!configData || !configData.rules || value === '--') return null;
+  var sensorIdx = key === 'temperature_c' ? 0 : key === 'humidity_pct' ? 1 : key === 'analog_pct' ? 2 : -1;
+  if (sensorIdx < 0) return null;
+  var numVal = parseFloat(value);
+  if (isNaN(numVal)) return null;
+  for (var i = 0; i < configData.rules.length; i++) {
+    var r = configData.rules[i];
+    if (!r.enabled || r.sensor !== sensorIdx) continue;
+    var thresh = r.threshold / 10;
+    var lo = thresh - (r.hysteresis / 10) * 2;
+    var hi = thresh + (r.hysteresis / 10) * 2;
+    var pct = Math.max(0, Math.min(100, ((numVal - lo) / (hi - lo)) * 100));
+    return { threshold: thresh, percent: pct, triggered: r.triggered, label: r.label || ('Rule ' + (i + 1)) };
+  }
+  return null;
+}
+
+function openSensorDetail(key) {
+  if (!detailOverlay || !detailCard) return;
+
+  var readingMeta = null;
+  var sensorData = null;
+  if (lastState && lastState.sensors) {
+    for (var i = 0; i < lastState.sensors.length; i++) {
+      var sen = lastState.sensors[i];
+      var meta = sensorMeta[sen.type];
+      if (!meta) continue;
+      for (var r = 0; r < meta.readings.length; r++) {
+        if (meta.readings[r].key === key) {
+          readingMeta = meta.readings[r];
+          sensorData = sen;
+          break;
+        }
+      }
+      if (readingMeta) break;
+    }
+  }
+
+  if (!readingMeta || !sensorData) return;
+
+  var val = '--';
+  if (sensorData.readings && sensorData.readings[key] !== undefined) {
+    val = parseFloat(sensorData.readings[key]).toFixed(readingMeta.decimals);
+  }
+  var unitLabel = readingMeta.unit;
+  if (sensorData.unit && sensorMeta[sensorData.type].readings.length === 1) unitLabel = ' ' + sensorData.unit;
+
+  var trend = computeTrend(key);
+  var trendText = trend.dir === 'rising' ? 'Rising' : trend.dir === 'falling' ? 'Falling' : 'Stable';
+  var trendCls = trend.cls || 'trend-stable';
+
+  var stats = computeStats();
+  var statHtml = '';
+  if (stats && stats[key] && stats[key].count > 0) {
+    var s = stats[key];
+    var avg = (s.sum / s.count).toFixed(readingMeta.decimals);
+    statHtml = '<div class="detail-stats">' +
+      '<div class="detail-stat"><div class="detail-stat-label">Min</div><div class="detail-stat-value">' + s.min.toFixed(readingMeta.decimals) + escHtml(unitLabel) + '</div></div>' +
+      '<div class="detail-stat"><div class="detail-stat-label">Avg</div><div class="detail-stat-value">' + avg + escHtml(unitLabel) + '</div></div>' +
+      '<div class="detail-stat"><div class="detail-stat-label">Max</div><div class="detail-stat-value">' + s.max.toFixed(readingMeta.decimals) + escHtml(unitLabel) + '</div></div>' +
+    '</div>';
+  }
+
+  var spark = detailSparklineSvg(key, 280, 60);
+  var ageText = formatAge(sensorData.reading_age_s);
+  var quality = sensorData.quality || 'missing';
+
+  var threshHtml = '';
+  var proxData = getThresholdProximity(key, val);
+  if (proxData) {
+    var barCls = proxData.triggered ? ' detail-thresh-triggered' : '';
+    threshHtml = '<div class="detail-thresh-bar' + barCls + '">' +
+      '<div class="detail-thresh-fill" style="width:' + proxData.percent.toFixed(0) + '%"></div>' +
+      '<div class="detail-thresh-label">' + escHtml(proxData.label) + ' @ ' + proxData.threshold + escHtml(unitLabel) + '</div>' +
+    '</div>';
+  }
+
+  var metaItems = [];
+  if (quality && quality !== 'fresh') metaItems.push('<div class="detail-meta-item">Quality: ' + quality + '</div>');
+  if (ageText) metaItems.push('<div class="detail-meta-item">Last reading: ' + ageText + '</div>');
+  if (sensorData.connected !== undefined) metaItems.push('<div class="detail-meta-item">Status: ' + (sensorData.connected ? 'Connected' : 'Offline') + '</div>');
+  var sensorLabel = sensorData.label || sensorData.name;
+
+  var html = '<div class="detail-header">' +
+    '<div class="detail-icon">' + getSensorIcon(key) + '</div>' +
+    '<div><div class="detail-title">' + escHtml(readingMeta.label) + '</div>' +
+    '<div class="detail-sub">' + escHtml(sensorLabel) + '</div></div>' +
+  '</div>' +
+  '<div class="detail-value-row">' +
+    '<span class="detail-big-value">' + val + '</span>' +
+    '<span class="detail-big-unit">' + escHtml(unitLabel) + '</span>' +
+    '<span class="detail-trend ' + trendCls + '">' + trendText + '</span>' +
+  '</div>' +
+  spark +
+  statHtml +
+  threshHtml +
+  (metaItems.length ? '<div class="detail-meta">' + metaItems.join('') + '</div>' : '');
+
+  detailCard.innerHTML = html;
+  detailOverlay.classList.add('active');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeSensorDetail() {
+  if (!detailOverlay) return;
+  detailOverlay.classList.remove('active');
+  document.body.style.overflow = '';
+}
+
+(function initDetailOverlay() {
+  detailOverlay = document.getElementById('detail-overlay');
+  detailCard = document.getElementById('detail-card');
+  if (!detailOverlay) return;
+
+  detailOverlay.addEventListener('click', function(e) {
+    if (e.target === detailOverlay) closeSensorDetail();
+  });
+
+  var heroBox = document.getElementById('sensor-hero');
+  if (heroBox) {
+    heroBox.addEventListener('click', function(e) {
+      var card = e.target.closest('.hero-card[data-sensor-key]');
+      if (card) openSensorDetail(card.getAttribute('data-sensor-key'));
+    });
+  }
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && detailOverlay.classList.contains('active')) {
+      closeSensorDetail();
+    }
+  });
+})();
