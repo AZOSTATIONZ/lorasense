@@ -17,13 +17,13 @@
 #include <DHT.h>
 #include "protocol.h"
 
-// --- Relay pins ---
-const uint8_t RELAY_PIN[] = { 22, 23, 24, 25 };
-const uint8_t RELAY_COUNT = sizeof(RELAY_PIN) / sizeof(RELAY_PIN[0]);
+// --- Relay pins (supports 1/2/4/8-channel modules) ---
+const uint8_t RELAY_PIN[] = { 22, 23, 24, 25, 26, 27, 28, 29 };
+const uint8_t RELAY_COUNT = 4;  // active channel count — change to match your relay module
 const bool RELAY_ACTIVE_LOW = false;  // this module: HIGH = relay ON
 
 // --- Relay state ---
-bool relayState[4] = { false, false, false, false };
+bool relayState[8] = { false };
 
 // --- LoRa pins ---
 const int PIN_NSS  = 53;

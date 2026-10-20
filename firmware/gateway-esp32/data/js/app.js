@@ -1139,6 +1139,13 @@ function renderSettings(cfg) {
   document.getElementById('env-type-input').value = cfg.environment.type || 'home';
   document.getElementById('env-theme-input').value = themeOverride || 'auto';
 
+  // Relay module
+  var relayCountInput = document.getElementById('relay-count-input');
+  if (relayCountInput) {
+    relayCountInput.value = cfg.relay_count || 4;
+    renderRelayPinMap(cfg);
+  }
+
   // Zones
   var zoneList = document.getElementById('zone-list');
   zoneList.innerHTML = '';
@@ -1167,10 +1174,11 @@ function renderSettings(cfg) {
     eqZone.appendChild(opt);
   }
 
-  // Relay outputs for equipment form — show all with availability
+  // Relay outputs for equipment form — show configured channels
   var eqOutput = document.getElementById('eq-output');
   eqOutput.innerHTML = '<option value="255">None (monitor only)</option>';
-  for (var ri = 0; ri < cfg.max_outputs; ri++) {
+  var activeRelays = cfg.relay_count || cfg.max_outputs || 4;
+  for (var ri = 0; ri < activeRelays; ri++) {
     var opt = document.createElement('option');
     opt.value = ri;
     var owner = null;
@@ -1234,6 +1242,53 @@ document.getElementById('save-env-btn').onclick = function() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   }).then(function() { loadConfig(); });
+};
+
+// --- Relay module config ---
+function renderRelayPinMap(cfg) {
+  var map = document.getElementById('relay-pin-map');
+  if (!map) return;
+  var pins = cfg.relay_pins || [];
+  var count = cfg.relay_count || 4;
+  var html = '<div class="relay-map">';
+  for (var i = 0; i < count; i++) {
+    var pin = pins[i] ? pins[i].pin : 'D' + (22 + i);
+    var assignee = pins[i] && pins[i].assigned_to ? pins[i].assigned_to : '';
+    var assignCls = assignee ? 'relay-map-assign assigned' : 'relay-map-assign';
+    var assignText = assignee ? escHtml(assignee) : 'Available';
+    html += '<div class="relay-map-row">' +
+      '<span class="relay-map-idx">' + (i + 1) + '</span>' +
+      '<span class="relay-map-pin">Pin ' + escHtml(pin) + '</span>' +
+      '<span class="' + assignCls + '">' + assignText + '</span>' +
+    '</div>';
+  }
+  html += '</div>';
+  map.innerHTML = html;
+}
+
+document.getElementById('save-relay-btn').onclick = function() {
+  var count = parseInt(document.getElementById('relay-count-input').value) || 4;
+  fetch('/api/config/environment', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ relay_count: count })
+  }).then(function() {
+    showToast('Relay module updated to ' + count + ' channels', 'success');
+    loadConfig();
+  });
+};
+
+document.getElementById('relay-count-input').onchange = function() {
+  if (!configData) return;
+  var count = parseInt(this.value) || 4;
+  var preview = { relay_pins: [], relay_count: count };
+  for (var i = 0; i < count; i++) {
+    preview.relay_pins.push({ pin: 'D' + (22 + i) });
+    if (configData.relay_pins && configData.relay_pins[i]) {
+      preview.relay_pins[i] = configData.relay_pins[i];
+    }
+  }
+  renderRelayPinMap(preview);
 };
 
 // --- Add zone ---

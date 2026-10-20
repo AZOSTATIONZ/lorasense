@@ -111,9 +111,9 @@ const PinReservation MEGA_RESERVATIONS[] PROGMEM = {
 };
 const int MEGA_RESERVATION_COUNT = sizeof(MEGA_RESERVATIONS) / sizeof(MEGA_RESERVATIONS[0]);
 
-// Known relay pin assignments on the current Mega node
-const uint8_t MEGA_RELAY_PINS[] = { 22, 23, 24, 25 };
-const int MEGA_RELAY_COUNT = 4;
+// Known relay pin assignments on the current Mega node (up to 8 channels)
+const uint8_t MEGA_RELAY_PINS[] = { 22, 23, 24, 25, 26, 27, 28, 29 };
+const int MEGA_RELAY_COUNT = 8;
 
 // DHT11 pin on the current Mega node (legacy default)
 const uint8_t MEGA_DHT_PIN = 7;

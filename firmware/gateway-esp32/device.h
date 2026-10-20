@@ -18,8 +18,8 @@ inline const char *statusName(CmdStatus s) {
   }
 }
 
-// Runtime state for each relay output channel (indexed by output 0-3)
-const int MAX_OUTPUTS = 4;
+// Runtime state for each relay output channel (indexed by output 0-7)
+const int MAX_OUTPUTS = 8;
 
 struct OutputState {
   bool      confirmedOn;

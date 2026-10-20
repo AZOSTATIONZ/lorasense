@@ -916,6 +916,28 @@ body:has(.quick-bar.visible) main { padding-bottom: 80px; }
   from { opacity: 1; transform: translateX(0); }
   to   { opacity: 0; transform: translateX(40px); }
 }
+/* Phase 22: Relay module config */
+.relay-map { margin: 12px 0 8px; }
+.relay-map-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.relay-map-row:last-child { border-bottom: none; }
+.relay-map-idx {
+  font-weight: 700; font-size: 14px; color: var(--accent);
+  min-width: 24px; text-align: center;
+}
+.relay-map-pin {
+  font-family: 'SF Mono', 'Consolas', monospace;
+  font-size: 12px; color: var(--muted);
+  background: var(--bg); padding: 2px 8px; border-radius: 4px;
+}
+.relay-map-assign {
+  flex: 1; text-align: right; font-size: 12px; color: var(--muted);
+}
+.relay-map-assign.assigned { color: var(--on); font-weight: 600; }
+
 /* Phase 21: Micro-interactions */
 .hero-card {
   transition: border-color 0.3s, box-shadow 0.3s, opacity 0.3s, transform 0.2s ease;

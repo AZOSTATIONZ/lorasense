@@ -554,13 +554,29 @@ void handleGetConfig() {
     }
   }
 
-  // Available relay outputs
+  // Available relay outputs (respect configured relay count)
+  int relayCount = config.env.relayCount;
   JsonArray outArr = doc["available_outputs"].to<JsonArray>();
-  for (int i = 0; i < MAX_OUTPUTS; i++) {
+  for (int i = 0; i < relayCount; i++) {
     if (!config.isOutputTaken(i)) outArr.add(i);
   }
 
   doc["max_outputs"] = MAX_OUTPUTS;
+  doc["relay_count"] = relayCount;
+
+  // Relay pin map for UI
+  JsonArray pinArr = doc["relay_pins"].to<JsonArray>();
+  for (int i = 0; i < relayCount; i++) {
+    JsonObject rp = pinArr.add<JsonObject>();
+    rp["index"] = i;
+    char pinBuf[6];
+    if (i < MEGA_RELAY_COUNT) {
+      HardwareManager::pinName(MEGA_RELAY_PINS[i], pinBuf, sizeof(pinBuf));
+      rp["pin"] = String(pinBuf);
+    }
+    Equipment *owner = config.findByOutput(i);
+    if (owner) rp["assigned_to"] = owner->name;
+  }
 
   // Sensors
   JsonArray sArr = doc["sensors"].to<JsonArray>();
@@ -617,6 +633,9 @@ void handleSetEnvironment() {
   }
   strlcpy(config.env.name, doc["name"] | config.env.name, NAME_LEN);
   strlcpy(config.env.type, doc["type"] | config.env.type, sizeof(config.env.type));
+  if (doc["relay_count"].is<int>()) {
+    config.env.relayCount = constrain((int)doc["relay_count"], 1, MAX_OUTPUTS);
+  }
   config.saveEnvironment();
   server.send(200, "application/json", "{\"ok\":true}");
 }
@@ -703,8 +722,8 @@ void handleAddEquipment() {
     server.send(400, "application/json", "{\"error\":\"need id and name\"}");
     return;
   }
-  if (output != 0xFF && output >= MAX_OUTPUTS) {
-    String msg = "{\"error\":\"Relay " + String(output + 1) + " is unavailable on this controller (max " + String(MAX_OUTPUTS) + ")\"}";
+  if (output != 0xFF && output >= config.env.relayCount) {
+    String msg = "{\"error\":\"Relay " + String(output + 1) + " is unavailable (configured for " + String(config.env.relayCount) + " channels)\"}";
     server.send(400, "application/json", msg);
     return;
   }
@@ -748,8 +767,8 @@ void handleUpdateEquipment() {
     server.send(400, "application/json", "{\"error\":\"need id\"}");
     return;
   }
-  if (output != 0xFF && output >= MAX_OUTPUTS) {
-    String msg = "{\"error\":\"Relay " + String(output + 1) + " is unavailable on this controller (max " + String(MAX_OUTPUTS) + ")\"}";
+  if (output != 0xFF && output >= config.env.relayCount) {
+    String msg = "{\"error\":\"Relay " + String(output + 1) + " is unavailable (configured for " + String(config.env.relayCount) + " channels)\"}";
     server.send(400, "application/json", msg);
     return;
   }
@@ -1320,7 +1339,7 @@ void handleGetNodes() {
     obj["board"]   = hw.nodes[i].board;
     obj["fw"]      = hw.nodes[i].fwVersion;
     obj["online"]  = nodeOnline;
-    obj["relays"]  = MEGA_RELAY_COUNT;
+    obj["relays"]  = config.env.relayCount;
     obj["sensors"]  = 1;  // DHT11 currently
     obj["free_pins"] = hw.countAvailablePins();
   }
@@ -1367,7 +1386,7 @@ void handleGetRelays() {
   if (!auth.check(server, ROLE_USER)) return;
   JsonDocument doc;
   JsonArray arr = doc.to<JsonArray>();
-  for (int i = 0; i < MEGA_RELAY_COUNT; i++) {
+  for (int i = 0; i < config.env.relayCount; i++) {
     JsonObject obj = arr.add<JsonObject>();
     obj["index"] = i;
     obj["label"] = String("Relay ") + String(i + 1);

@@ -28,6 +28,7 @@ struct Environment {
   char type[16];       // home, farm, greenhouse, industrial, lab, custom
   bool configured;
   CommissionStatus commissionStatus;
+  uint8_t relayCount;  // configured relay channel count (1-8, default 4)
 };
 
 // --- Zone ---
@@ -105,6 +106,7 @@ public:
 
   ConfigManager() : zoneCount(0), equipmentCount(0), sensorCount(0), ruleCount(0) {
     memset(&env, 0, sizeof(env));
+    env.relayCount = 4;
     memset(zones, 0, sizeof(zones));
     memset(equipment, 0, sizeof(equipment));
     memset(sensors, 0, sizeof(sensors));
@@ -132,6 +134,7 @@ public:
       strlcpy(env.name, doc["name"] | "My Home", NAME_LEN);
       strlcpy(env.type, doc["type"] | "home", sizeof(env.type));
       env.commissionStatus = (CommissionStatus)(doc["commission"] | (int)CS_DRAFT);
+      env.relayCount = constrain(doc["relay_count"] | 4, 1, MAX_OUTPUTS);
       env.configured = true;
     }
     f.close();
@@ -146,6 +149,7 @@ public:
     doc["name"] = env.name;
     doc["type"] = env.type;
     doc["commission"] = (int)env.commissionStatus;
+    doc["relay_count"] = env.relayCount;
     serializeJson(doc, f);
     f.close();
     env.configured = true;
