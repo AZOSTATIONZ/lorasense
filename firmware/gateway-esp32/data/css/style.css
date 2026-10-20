@@ -70,6 +70,7 @@ body {
   margin: 0;
   font-family: var(--font);
   background: var(--bg); color: var(--text);
+  transition: background 0.3s ease, color 0.3s ease;
 }
 /* Phase 20: Accessibility */
 .skip-link {

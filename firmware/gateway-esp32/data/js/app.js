@@ -15,11 +15,15 @@ function isDarkActive() {
 
 function applyDarkMode() {
   var dark = isDarkActive();
-  if (dark) {
+  if (darkModePref === 'dark') {
     document.documentElement.setAttribute('data-theme', 'dark');
+  } else if (darkModePref === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
   } else {
     document.documentElement.removeAttribute('data-theme');
   }
+  var meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', dark ? '#111418' : '#2563eb');
   updateDarkIcon(dark);
 }
 
