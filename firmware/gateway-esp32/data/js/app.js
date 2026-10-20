@@ -823,12 +823,23 @@ function drawDevices(s) {
 }
 
 function setDevice(id, state) {
+  var devName = id;
+  if (lastQuickDevices) {
+    for (var i = 0; i < lastQuickDevices.length; i++) {
+      if (lastQuickDevices[i].id === id) { devName = lastQuickDevices[i].name; break; }
+    }
+  }
   var body = 'id=' + encodeURIComponent(id) + '&state=' + encodeURIComponent(state);
   fetch('/api/devices', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body
-  }).then(function() { refresh(); });
+  }).then(function() {
+    showToast(devName + ' turned ' + state, 'success');
+    refresh();
+  }).catch(function() {
+    showToast('Failed to switch ' + devName, 'error');
+  });
 }
 
 // =====================================================================
@@ -888,9 +899,11 @@ function refresh() {
   fetch('/api/state')
     .then(function(res) { return res.json(); })
     .then(function(s) {
+      var wasDisconnected = failCount >= 3;
       failCount = 0;
       document.getElementById('banner').style.display = 'none';
       hideReconnectOverlay();
+      if (wasDisconnected) showToast('Connection restored', 'success');
       if (s.env_name) {
         document.getElementById('env-name').textContent = s.env_name;
       }
@@ -2337,8 +2350,9 @@ document.getElementById('quick-bar').onclick = function(e) {
 
 function allOff() {
   fetch('/api/all-off', { method: 'POST' })
-    .then(function() { refresh(); })
+    .then(function() { showToast('All devices turned off', 'success'); refresh(); })
     .catch(function() {
+      showToast('All-off failed, turning off individually', 'warning');
       if (lastQuickDevices) {
         for (var i = 0; i < lastQuickDevices.length; i++) {
           var d = lastQuickDevices[i];
@@ -2348,4 +2362,66 @@ function allOff() {
         }
       }
     });
+}
+
+// =====================================================================
+//  Phase 15: Toast notifications
+// =====================================================================
+var TOAST_MAX = 3;
+var TOAST_DURATION = 3500;
+var TOAST_ICONS = {
+  success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+  error:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+  warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  info:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+};
+
+function showToast(message, type) {
+  type = type || 'info';
+  var container = document.getElementById('toast-container');
+  if (!container) return;
+
+  var toast = document.createElement('div');
+  toast.className = 'toast toast-' + type;
+  toast.innerHTML = '<span class="toast-icon">' + (TOAST_ICONS[type] || TOAST_ICONS.info) + '</span>' +
+    '<span class="toast-msg">' + escHtml(message) + '</span>';
+
+  container.appendChild(toast);
+
+  // Limit visible toasts
+  var toasts = container.querySelectorAll('.toast:not(.toast-out)');
+  while (toasts.length > TOAST_MAX) {
+    dismissToast(toasts[0]);
+    toasts = container.querySelectorAll('.toast:not(.toast-out)');
+  }
+
+  // Auto-dismiss
+  var timer = setTimeout(function() { dismissToast(toast); }, TOAST_DURATION);
+
+  // Click to dismiss
+  toast.onclick = function() {
+    clearTimeout(timer);
+    dismissToast(toast);
+  };
+
+  // Swipe to dismiss (mobile)
+  var startX = 0;
+  toast.addEventListener('touchstart', function(e) {
+    startX = e.touches[0].clientX;
+  }, { passive: true });
+  toast.addEventListener('touchend', function(e) {
+    var dx = e.changedTouches[0].clientX - startX;
+    if (dx > 60) {
+      clearTimeout(timer);
+      dismissToast(toast);
+    }
+  }, { passive: true });
+}
+
+function dismissToast(toast) {
+  if (!toast || toast.classList.contains('toast-out')) return;
+  toast.classList.add('toast-out');
+  setTimeout(function() {
+    if (toast.parentNode) toast.parentNode.removeChild(toast);
+  }, 300);
 }
