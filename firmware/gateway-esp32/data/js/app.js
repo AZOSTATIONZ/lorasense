@@ -1,6 +1,54 @@
 // LoRaSense dashboard + settings application
 // Polls /api/state for dashboard, /api/config for settings
 
+// =====================================================================
+//  Phase 16: Dark mode toggle
+// =====================================================================
+var darkModePref = null;
+try { darkModePref = localStorage.getItem('ls_dark'); } catch(e) {}
+
+function isDarkActive() {
+  if (darkModePref === 'dark') return true;
+  if (darkModePref === 'light') return false;
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+function applyDarkMode() {
+  var dark = isDarkActive();
+  if (dark) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+  updateDarkIcon(dark);
+}
+
+function updateDarkIcon(dark) {
+  var btn = document.getElementById('dark-mode-btn');
+  if (!btn) return;
+  var sun = '<path d="M12 3v1m0 16v1m-7.07-2.93l.71.71M5.64 5.64l-.71.71M3 12h1m16 0h1m-2.93 7.07l-.71-.71M18.36 5.64l.71-.71"/><circle cx="12" cy="12" r="4"/>';
+  var moon = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+  var svg = btn.querySelector('svg');
+  if (svg) svg.innerHTML = dark ? moon : sun;
+}
+
+function toggleDarkMode() {
+  var dark = isDarkActive();
+  darkModePref = dark ? 'light' : 'dark';
+  try { localStorage.setItem('ls_dark', darkModePref); } catch(e) {}
+  applyDarkMode();
+}
+
+applyDarkMode();
+
+if (window.matchMedia) {
+  try {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
+      if (!darkModePref) applyDarkMode();
+    });
+  } catch(e) {}
+}
+
 var pollTimer = null;
 var historyTimer = null;
 var currentView = 'dashboard';
@@ -156,6 +204,7 @@ var currentProfile = PROFILES.home;
 //  Navigation
 // =====================================================================
 document.getElementById('settings-btn').onclick = function() { showView('settings'); };
+document.getElementById('dark-mode-btn').onclick = toggleDarkMode;
 document.getElementById('back-btn').onclick = function() { showView('dashboard'); };
 
 function showView(view) {
