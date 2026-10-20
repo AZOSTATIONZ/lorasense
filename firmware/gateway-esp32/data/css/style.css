@@ -941,6 +941,73 @@ body:has(.quick-bar.visible) main { padding-bottom: 80px; }
 .hero-range.in-range { background: rgba(22,163,74,0.12); color: var(--on); }
 .hero-range.out-of-range { background: rgba(220,38,38,0.12); color: var(--fail); }
 
+/* Phase 24: User documentation page */
+.docs-section { margin-bottom: 4px; }
+.docs-group {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); overflow: hidden;
+}
+.docs-heading {
+  padding: 14px 16px; font-size: 15px; font-weight: 700;
+  color: var(--text); cursor: pointer; user-select: none;
+  list-style: none; display: flex; align-items: center; gap: 8px;
+}
+.docs-heading::-webkit-details-marker { display: none; }
+.docs-heading::before {
+  content: '\25B6'; font-size: 10px; color: var(--muted);
+  transition: transform 0.2s ease;
+}
+details[open] > .docs-heading::before { transform: rotate(90deg); }
+.docs-body {
+  padding: 0 16px 16px; font-size: 13px; line-height: 1.7;
+  color: var(--text);
+}
+.docs-body p { margin: 0 0 10px; }
+.docs-body ul, .docs-body ol { margin: 0 0 10px; padding-left: 20px; }
+.docs-body li { margin-bottom: 6px; }
+.docs-steps { counter-reset: step; list-style: none; padding-left: 0; }
+.docs-steps li {
+  counter-increment: step; position: relative; padding-left: 32px;
+  margin-bottom: 12px;
+}
+.docs-steps li::before {
+  content: counter(step); position: absolute; left: 0; top: 0;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--accent); color: #fff; font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.docs-callout {
+  background: var(--accent-soft); border-left: 3px solid var(--accent);
+  border-radius: 4px; padding: 10px 14px; margin: 10px 0;
+  font-size: 12px; line-height: 1.6;
+}
+.docs-table {
+  width: 100%; border-collapse: collapse; font-size: 12px; margin: 10px 0;
+}
+.docs-table th, .docs-table td {
+  padding: 8px 10px; text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.docs-table th {
+  font-weight: 700; font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.5px; color: var(--muted);
+}
+.docs-supported { color: var(--on); font-weight: 600; }
+.docs-engineering { color: var(--pending); font-weight: 600; }
+.docs-faq dt {
+  font-weight: 700; font-size: 13px; margin: 12px 0 4px;
+  color: var(--text);
+}
+.docs-faq dd {
+  margin: 0 0 12px; padding-left: 0; font-size: 13px;
+  color: var(--muted); line-height: 1.6;
+}
+.docs-footer {
+  text-align: center; padding: 16px; font-size: 12px;
+  color: var(--muted); line-height: 1.6;
+}
+.docs-footer p { margin: 2px 0; }
+
 /* Phase 22: Relay module config */
 .relay-map { margin: 12px 0 8px; }
 .relay-map-row {

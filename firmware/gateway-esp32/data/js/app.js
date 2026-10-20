@@ -277,13 +277,15 @@ var currentProfile = PROFILES.home;
 //  Navigation
 // =====================================================================
 document.getElementById('settings-btn').onclick = function() { showView('settings'); };
+document.getElementById('help-btn').onclick = function() { showView('docs'); };
 document.getElementById('dark-mode-btn').onclick = toggleDarkMode;
 document.getElementById('back-btn').onclick = function() { showView('dashboard'); };
+document.getElementById('docs-back-btn').onclick = function() { showView('dashboard'); };
 
 function showView(view) {
   var prevView = currentView;
   currentView = view;
-  var views = ['dashboard', 'settings', 'studio'];
+  var views = ['dashboard', 'settings', 'studio', 'docs'];
   for (var v = 0; v < views.length; v++) {
     var el = document.getElementById('view-' + views[v]);
     if (views[v] === view) {
@@ -312,6 +314,10 @@ function showView(view) {
     clearInterval(pollTimer);
     clearInterval(historyTimer);
     loadStudio();
+  } else if (view === 'docs') {
+    clearInterval(pollTimer);
+    clearInterval(historyTimer);
+    populateDocsPresets();
   } else {
     refresh();
     loadHistory();
@@ -2096,6 +2102,22 @@ document.getElementById('wiz-go-dashboard').onclick = function() {
   document.getElementById('view-wizard').style.display = 'none';
   showView('dashboard');
 };
+
+// =====================================================================
+//  Documentation helpers
+// =====================================================================
+function populateDocsPresets() {
+  var box = document.getElementById('docs-presets-hint');
+  if (!box || !currentProfile.presets || !currentProfile.presets.length) {
+    if (box) box.style.display = 'none';
+    return;
+  }
+  var names = currentProfile.presets.map(function(p) { return p.name; });
+  box.innerHTML = '<strong>Presets for your environment:</strong> ' +
+    escHtml(names.join(', ')) +
+    '. Find them in Settings → Automation.';
+  box.style.display = '';
+}
 
 // =====================================================================
 //  Start — check if onboarding needed
