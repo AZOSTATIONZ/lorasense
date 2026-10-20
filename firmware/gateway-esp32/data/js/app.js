@@ -306,8 +306,11 @@ function drawSensorHero(s) {
   var sensors = s.sensors;
 
   if (!sensors || sensors.length === 0) {
-    box.innerHTML = '<div class="empty-state">No ' + terms.sensor.toLowerCase() + 's configured.<br>' +
-      '<a href="#" onclick="showView(\'studio\');return false;">Add a ' + terms.sensor.toLowerCase() + ' in Hardware Studio</a></div>';
+    box.innerHTML = '<div class="empty-state-box">' +
+      '<div class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h.01M15 9h.01M9 15h6"/></svg></div>' +
+      '<div class="empty-state-title">No ' + terms.sensor.toLowerCase() + 's yet</div>' +
+      '<div class="empty-state-msg">Add your first ' + terms.sensor.toLowerCase() + ' in<br><a href="#" onclick="showView(\'studio\');return false;">Hardware Studio</a> to start monitoring.</div>' +
+    '</div>';
     return;
   }
 
@@ -558,8 +561,29 @@ function loadHistory() {
 
 function drawChart() {
   var section = document.getElementById('chart-section');
-  if (chartData.length < 2) { section.style.display = 'none'; return; }
+  if (chartData.length < 2) {
+    if (hasSensors && chartData.length === 0) {
+      section.style.display = '';
+      var canvas = document.getElementById('chart-canvas');
+      canvas.style.display = 'none';
+      var emptyEl = section.querySelector('.chart-empty');
+      if (!emptyEl) {
+        emptyEl = document.createElement('div');
+        emptyEl.className = 'chart-empty empty-state-box';
+        emptyEl.innerHTML = '<div class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>' +
+          '<div class="empty-state-msg">Collecting data&hellip; chart appears after a few readings.</div>';
+        canvas.parentNode.insertBefore(emptyEl, canvas);
+      }
+    } else {
+      section.style.display = 'none';
+    }
+    return;
+  }
   section.style.display = '';
+  var emptyEl = section.querySelector('.chart-empty');
+  if (emptyEl) emptyEl.parentNode.removeChild(emptyEl);
+  var canvas = document.getElementById('chart-canvas');
+  canvas.style.display = '';
 
   var canvas = document.getElementById('chart-canvas');
   var dpr = window.devicePixelRatio || 1;
