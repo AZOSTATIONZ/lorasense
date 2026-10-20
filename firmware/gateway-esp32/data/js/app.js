@@ -176,6 +176,9 @@ function showView(view) {
     }
   }
 
+  var qbar = document.getElementById('quick-bar');
+  if (qbar && view !== 'dashboard') qbar.classList.remove('visible');
+
   if (view === 'settings') {
     clearInterval(pollTimer);
     clearInterval(historyTimer);
@@ -901,6 +904,8 @@ function refresh() {
       drawStatusBar(s);
       drawActiveRules(s);
       drawDevices(s);
+      lastQuickDevices = s.devices;
+      drawQuickBar(s);
     })
     .catch(function() {
       failCount++;
@@ -2230,3 +2235,117 @@ document.getElementById('save-auth-btn').onclick = function() {
     }
   }, { passive: true });
 })();
+
+// =====================================================================
+//  Phase 14: Collapsible sections
+// =====================================================================
+(function() {
+  var STORAGE_KEY = 'ls_collapsed';
+  var collapsed = {};
+  try {
+    var raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) collapsed = JSON.parse(raw);
+  } catch(e) {}
+
+  function saveCollapsed() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(collapsed)); } catch(e) {}
+  }
+
+  function applyState(sectId) {
+    var wrap = document.getElementById(sectId);
+    if (!wrap) return;
+    if (collapsed[sectId]) {
+      wrap.classList.add('collapsed');
+    } else {
+      wrap.classList.remove('collapsed');
+    }
+  }
+
+  var sects = document.querySelectorAll('.sect-hdr');
+  for (var i = 0; i < sects.length; i++) {
+    (function(hdr) {
+      var sectId = hdr.getAttribute('data-sect');
+      applyState(sectId);
+      hdr.onclick = function() {
+        collapsed[sectId] = !collapsed[sectId];
+        applyState(sectId);
+        saveCollapsed();
+        if (!collapsed[sectId] && sectId === 'sect-chart') drawChart();
+      };
+    })(sects[i]);
+  }
+})();
+
+// =====================================================================
+//  Phase 14: Quick controls bar
+// =====================================================================
+var lastQuickDevices = null;
+
+function drawQuickBar(s) {
+  var bar = document.getElementById('quick-bar');
+  if (!bar) return;
+  var devices = s.devices;
+  if (!devices || devices.length === 0) {
+    bar.classList.remove('visible');
+    return;
+  }
+  var relayDevices = [];
+  var anyOn = false;
+  for (var i = 0; i < devices.length; i++) {
+    var d = devices[i];
+    if (d.output === null || d.output === undefined) continue;
+    relayDevices.push(d);
+    if (d.on) anyOn = true;
+  }
+  if (relayDevices.length === 0) {
+    bar.classList.remove('visible');
+    return;
+  }
+
+  if (currentView !== 'dashboard') {
+    bar.classList.remove('visible');
+    return;
+  }
+
+  var html = '';
+  if (anyOn) {
+    html += '<button class="quick-pill qp-alloff" id="qb-alloff" title="Turn all off">' +
+      '<span class="qp-dot"></span>All off</button>';
+  }
+  for (var i = 0; i < relayDevices.length; i++) {
+    var d = relayDevices[i];
+    var cls = d.on ? ' qp-on' : '';
+    html += '<button class="quick-pill' + cls + '" data-qb-id="' + escHtml(d.id) + '" data-qb-on="' + (d.on ? '1' : '0') + '">' +
+      '<span class="qp-dot"></span>' + escHtml(d.name) + '</button>';
+  }
+
+  bar.innerHTML = html;
+  bar.classList.add('visible');
+}
+
+document.getElementById('quick-bar').onclick = function(e) {
+  var pill = e.target.closest('.quick-pill');
+  if (!pill) return;
+  if (pill.id === 'qb-alloff') {
+    allOff();
+    return;
+  }
+  var devId = pill.getAttribute('data-qb-id');
+  var isOn = pill.getAttribute('data-qb-on') === '1';
+  if (devId) setDevice(devId, isOn ? 'off' : 'on');
+};
+
+function allOff() {
+  fetch('/api/all-off', { method: 'POST' })
+    .then(function() { refresh(); })
+    .catch(function() {
+      if (lastQuickDevices) {
+        for (var i = 0; i < lastQuickDevices.length; i++) {
+          var d = lastQuickDevices[i];
+          if (d.on && d.output !== null && d.output !== undefined) {
+            setDevice(d.id, 'off');
+          }
+        }
+      }
+    });
+}

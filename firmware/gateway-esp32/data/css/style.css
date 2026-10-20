@@ -712,3 +712,69 @@ button:disabled { opacity: 0.5; cursor: wait; }
   transition: background 0.2s, transform 0.1s;
 }
 .device:active { transform: scale(0.985); }
+
+/* Phase 14: Collapsible sections */
+.sect-wrap { margin-bottom: 14px; }
+.sect-hdr {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 12px; cursor: pointer; user-select: none;
+  font-size: 13px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: background 0.15s;
+}
+.sect-hdr:active { background: var(--border); }
+.sect-arrow {
+  font-size: 12px; transition: transform 0.25s ease;
+  display: inline-block;
+}
+.sect-wrap.collapsed .sect-arrow { transform: rotate(-90deg); }
+.sect-body {
+  overflow: hidden;
+  max-height: 2000px;
+  transition: max-height 0.35s ease, opacity 0.25s ease;
+  opacity: 1;
+}
+.sect-wrap.collapsed .sect-body {
+  max-height: 0; opacity: 0;
+}
+
+/* Phase 14: Quick controls bar */
+.quick-bar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  display: none; align-items: center; gap: 8px;
+  padding: 10px 16px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  background: var(--card); border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.08);
+  z-index: 500; overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.quick-bar::-webkit-scrollbar { display: none; }
+.quick-bar.visible { display: flex; }
+.quick-pill {
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 20px;
+  border: 1px solid var(--border); background: var(--bg);
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  white-space: nowrap; flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.quick-pill:active { transform: scale(0.94); }
+.quick-pill.qp-on {
+  background: var(--on); color: #fff; border-color: var(--on);
+}
+.quick-pill .qp-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--off); flex-shrink: 0;
+}
+.quick-pill.qp-on .qp-dot { background: #fff; }
+.quick-pill.qp-alloff {
+  background: var(--fail); color: #fff; border-color: var(--fail);
+}
+.quick-pill.qp-alloff .qp-dot { background: #fff; }
+
+/* Extra bottom padding so content isn't hidden behind the quick bar */
+.quick-bar.visible ~ #view-dashboard,
+body:has(.quick-bar.visible) main { padding-bottom: 80px; }

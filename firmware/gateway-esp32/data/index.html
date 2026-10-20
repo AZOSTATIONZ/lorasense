@@ -187,30 +187,49 @@
     <div class="sensor-hero" id="sensor-hero"></div>
     <div class="stats-row" id="stats-row" style="display:none"></div>
     <div class="status-bar" id="status-bar"></div>
-    <div class="chart-section" id="chart-section" style="display:none">
-      <div class="chart-header">
-        <div class="chart-title-row">
-          <h2 style="margin:0;font-size:15px">Sensor History</h2>
-          <span class="data-count" id="data-count"></span>
-        </div>
-        <div class="chart-actions">
-          <div class="chart-range" id="chart-range">
-            <button class="range-btn active" data-range="60">1h</button>
-            <button class="range-btn" data-range="360">6h</button>
-            <button class="range-btn" data-range="1440">24h</button>
-          </div>
-          <button class="btn-export" id="export-csv-btn" title="Download CSV">CSV</button>
-        </div>
+    <div class="sect-wrap" id="sect-chart">
+      <div class="sect-hdr" data-sect="sect-chart">
+        <span class="sect-arrow" id="arrow-sect-chart">&#9662;</span>
+        <span>Chart &amp; History</span>
       </div>
-      <canvas id="chart-canvas" width="600" height="200"></canvas>
-      <div class="chart-legend">
-        <span class="legend-item"><span class="legend-dot legend-temp"></span>Temperature</span>
-        <span class="legend-item"><span class="legend-dot legend-hum"></span>Humidity</span>
+      <div class="sect-body" id="body-sect-chart">
+        <div class="chart-section" id="chart-section" style="display:none">
+          <div class="chart-header">
+            <div class="chart-title-row">
+              <h2 style="margin:0;font-size:15px">Sensor History</h2>
+              <span class="data-count" id="data-count"></span>
+            </div>
+            <div class="chart-actions">
+              <div class="chart-range" id="chart-range">
+                <button class="range-btn active" data-range="60">1h</button>
+                <button class="range-btn" data-range="360">6h</button>
+                <button class="range-btn" data-range="1440">24h</button>
+              </div>
+              <button class="btn-export" id="export-csv-btn" title="Download CSV">CSV</button>
+            </div>
+          </div>
+          <canvas id="chart-canvas" width="600" height="200"></canvas>
+          <div class="chart-legend">
+            <span class="legend-item"><span class="legend-dot legend-temp"></span>Temperature</span>
+            <span class="legend-item"><span class="legend-dot legend-hum"></span>Humidity</span>
+          </div>
+        </div>
       </div>
     </div>
     <div id="active-rules"></div>
-    <div id="devices"></div>
+    <div class="sect-wrap" id="sect-devices">
+      <div class="sect-hdr" data-sect="sect-devices">
+        <span class="sect-arrow" id="arrow-sect-devices">&#9662;</span>
+        <span>Devices</span>
+      </div>
+      <div class="sect-body" id="body-sect-devices">
+        <div id="devices"></div>
+      </div>
+    </div>
   </div>
+
+  <!-- Quick controls bar -->
+  <div class="quick-bar" id="quick-bar"></div>
 
   <!-- Settings view -->
   <div id="view-settings" style="display:none">
