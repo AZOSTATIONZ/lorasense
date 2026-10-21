@@ -941,6 +941,72 @@ body:has(.quick-bar.visible) main { padding-bottom: 80px; }
 .hero-range.in-range { background: rgba(22,163,74,0.12); color: var(--on); }
 .hero-range.out-of-range { background: rgba(220,38,38,0.12); color: var(--fail); }
 
+/* Phase 25: Sensor catalogue clarity */
+.driver-status-legend {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 12px; margin-bottom: 12px;
+}
+.legend-item {
+  display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px;
+}
+.legend-item:last-child { margin-bottom: 0; }
+.legend-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 4px;
+}
+.legend-dot-ok { background: var(--on); }
+.legend-dot-eng { background: var(--pending); }
+.legend-item div { display: flex; flex-direction: column; }
+.legend-item strong { font-size: 13px; }
+.legend-item span { font-size: 12px; color: var(--muted); }
+.driver-chips {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;
+}
+.driver-chip {
+  font-size: 11px; padding: 2px 8px; border-radius: 999px;
+  background: var(--bg); border: 1px solid var(--border); color: var(--muted);
+  white-space: nowrap;
+}
+.driver-chip.chip-bus { font-weight: 600; color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.driver-chip.chip-fw { color: var(--pending); border-color: var(--pending); }
+.driver-status-col {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0;
+}
+.driver-status-sub { font-size: 10px; color: var(--muted); white-space: nowrap; }
+.req-heading {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--pending); margin-bottom: 6px;
+}
+.driver-requirements svg { width: 14px; height: 14px; vertical-align: -2px; margin-right: 4px; flex-shrink: 0; }
+.driver-summary-bar {
+  margin-top: 16px; padding: 10px 12px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; gap: 12px;
+  font-size: 13px; font-weight: 500;
+}
+.driver-progress {
+  flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden;
+}
+.driver-progress-fill { height: 100%; background: var(--on); border-radius: 3px; transition: width 0.3s; }
+.docs-sensor-detail { font-size: 12px; color: var(--muted); }
+.docs-sensor-table th { text-align: left; }
+.docs-sensor-table td, .docs-sensor-table th {
+  padding: 6px 10px; border-bottom: 1px solid var(--border);
+}
+.docs-sensor-table tr:last-child td { border-bottom: none; }
+.docs-bus-chip {
+  display: inline-block; font-size: 10px; padding: 1px 6px;
+  border-radius: 999px; background: var(--accent-soft); color: var(--accent);
+  font-weight: 600;
+}
+.docs-legend {
+  display: flex; gap: 16px; margin-bottom: 12px; font-size: 13px; flex-wrap: wrap;
+}
+.docs-legend-item { display: flex; align-items: center; gap: 6px; }
+.docs-legend-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+
 /* Phase 24: User documentation page */
 .docs-section { margin-bottom: 4px; }
 .docs-group {

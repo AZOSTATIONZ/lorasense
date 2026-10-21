@@ -2250,16 +2250,29 @@ function loadDrivers() {
     var el = document.getElementById('driver-list');
     var html = '';
 
+    html += '<div class="driver-status-legend">' +
+      '<div class="legend-item"><span class="legend-dot legend-dot-ok"></span>' +
+      '<div><strong>Supported</strong><span>Driver built in, tested, and ready to commission. Just wire the sensor and add it above.</span></div></div>' +
+      '<div class="legend-item"><span class="legend-dot legend-dot-eng"></span>' +
+      '<div><strong>Engineering</strong><span>Hardware exists but the firmware driver is not yet built. Listed so you can plan ahead — see what\'s needed below each sensor.</span></div></div>' +
+    '</div>';
+
     if (supported.length) {
-      html += '<div class="driver-section-label">Ready to use — add instances from the sensor form above</div>';
+      html += '<div class="driver-section-label">' + svgIcon('check') + ' Ready to use (' + supported.length + ')</div>';
       html += supported.map(function(d){ return renderDriverCard(d); }).join('');
     }
 
     if (planned.length) {
-      html += '<div class="driver-section-label" style="margin-top:16px">' +
-        'Planned — requires firmware and hardware work before commissioning</div>';
+      html += '<div class="driver-section-label" style="margin-top:16px">' + svgIcon('clock') +
+        ' Roadmap (' + planned.length + ') — requires firmware and hardware work</div>';
       html += planned.map(function(d){ return renderDriverCard(d); }).join('');
     }
+
+    html += '<div class="driver-summary-bar">' +
+      '<span>' + supported.length + ' of ' + drivers.length + ' drivers ready</span>' +
+      '<div class="driver-progress"><div class="driver-progress-fill" style="width:' +
+      Math.round(supported.length / drivers.length * 100) + '%"></div></div>' +
+    '</div>';
 
     el.innerHTML = html;
     updateSensorPinOptions();
@@ -2271,32 +2284,38 @@ function renderDriverCard(d) {
     (d.unit ? ' (' + esc(d.unit) + ')' : '') +
     (d.max_per_node ? ' · max ' + d.max_per_node + '/node' : '') + '</small>' : '';
 
-  var details = '<div class="driver-details">';
-  details += '<span>Bus: ' + (BUS_NAMES[d.bus] || '?') + '</span>';
-  if (d.fw_min) details += '<span>Min FW: v' + esc(d.fw_min) + '</span>';
-  if (d.driver_ver) details += '<span>Def v' + d.driver_ver + '</span>';
+  var chips = '<div class="driver-chips">';
+  chips += '<span class="driver-chip chip-bus">' + (BUS_NAMES[d.bus] || '?') + '</span>';
+  if (d.pin_count) chips += '<span class="driver-chip">' + d.pin_count + ' pin' + (d.pin_count > 1 ? 's' : '') + '</span>';
   if (d.range_min !== undefined) {
-    details += '<span>Range: ' + (d.range_min/10) + ' – ' + (d.range_max/10) +
+    chips += '<span class="driver-chip">' + (d.range_min/10) + ' – ' + (d.range_max/10) +
       (d.unit ? ' ' + esc(d.unit) : '') + '</span>';
   }
-  details += '</div>';
+  if (d.max_per_node > 1) chips += '<span class="driver-chip">Multi-instance</span>';
+  if (d.fw_min) chips += '<span class="driver-chip chip-fw">FW ≥ v' + esc(d.fw_min) + '</span>';
+  chips += '</div>';
 
   var reqHtml = '';
   if (!d.supported) {
     reqHtml = '<div class="driver-requirements">';
-    if (d.hw_req) reqHtml += '<div class="req-item"><strong>Hardware:</strong> ' + esc(d.hw_req) + '</div>';
-    if (d.dev_note) reqHtml += '<div class="req-item"><strong>Firmware:</strong> ' + esc(d.dev_note) + '</div>';
+    reqHtml += '<div class="req-heading">What\'s needed to enable this sensor:</div>';
+    if (d.hw_req) reqHtml += '<div class="req-item">' + svgIcon('board') + ' <strong>Hardware:</strong> ' + esc(d.hw_req) + '</div>';
+    if (d.dev_note) reqHtml += '<div class="req-item">' + svgIcon('code') + ' <strong>Firmware:</strong> ' + esc(d.dev_note) + '</div>';
     reqHtml += '</div>';
   } else if (d.hw_req) {
-    reqHtml = '<div class="driver-hw-note">' + esc(d.hw_req) + '</div>';
+    reqHtml = '<div class="driver-hw-note">' + svgIcon('info') + ' ' + esc(d.hw_req) + '</div>';
   }
+
+  var statusLabel = d.supported ? 'Supported' : 'Engineering';
+  var statusSub = d.supported ? 'Ready to use' : 'Not yet built';
 
   return '<div class="driver-card' + (d.supported ? '' : ' driver-planned') + '">' +
     '<div class="driver-info"><h4>' + esc(d.name) + meta + '</h4>' +
-    '<p>' + esc(d.desc) + '</p>' + details + reqHtml + '</div>' +
-    '<span class="driver-badge ' + (d.supported ? 'ok' : 'na') + '">' +
-      (d.supported ? 'Supported' : 'Engineering required') +
-    '</span></div>';
+    '<p>' + esc(d.desc) + '</p>' + chips + reqHtml + '</div>' +
+    '<div class="driver-status-col">' +
+      '<span class="driver-badge ' + (d.supported ? 'ok' : 'na') + '">' + statusLabel + '</span>' +
+      '<span class="driver-status-sub">' + statusSub + '</span>' +
+    '</div></div>';
 }
 
 function loadSensors() {

@@ -684,22 +684,28 @@
       <details class="docs-group">
         <summary class="docs-heading">Sensor Catalogue</summary>
         <div class="docs-body" id="docs-sensor-catalogue">
-          <p>LoRaSense supports the following sensor types:</p>
-          <table class="docs-table">
-            <tr><th>Sensor</th><th>Readings</th><th>Status</th></tr>
-            <tr><td>DHT11</td><td>Temperature, Humidity</td><td class="docs-supported">Supported</td></tr>
-            <tr><td>DHT22 / AM2302</td><td>Temperature, Humidity</td><td class="docs-supported">Supported</td></tr>
-            <tr><td>Analog Input</td><td>0–100% (configurable)</td><td class="docs-supported">Supported</td></tr>
-            <tr><td>BMP280</td><td>Temperature, Pressure</td><td class="docs-engineering">Engineering</td></tr>
-            <tr><td>BME280</td><td>Temp, Humidity, Pressure</td><td class="docs-engineering">Engineering</td></tr>
-            <tr><td>DS18B20</td><td>Temperature (waterproof)</td><td class="docs-engineering">Engineering</td></tr>
-            <tr><td>SHT31</td><td>Temperature, Humidity</td><td class="docs-engineering">Engineering</td></tr>
-            <tr><td>TSL2561</td><td>Light level (lux)</td><td class="docs-engineering">Engineering</td></tr>
-            <tr><td>MQ-135</td><td>Air quality (analog)</td><td class="docs-engineering">Engineering</td></tr>
-            <tr><td>Capacitive Soil</td><td>Soil moisture</td><td class="docs-engineering">Engineering</td></tr>
+          <div class="docs-legend">
+            <div class="docs-legend-item"><span class="docs-legend-dot" style="background:var(--on)"></span> Supported — driver built in, tested, ready to use</div>
+            <div class="docs-legend-item"><span class="docs-legend-dot" style="background:var(--pending)"></span> Engineering — hardware exists, firmware driver not yet built</div>
+          </div>
+          <p>LoRaSense recognises 13 sensor types. 3 are production-ready today; 10 are on the roadmap.</p>
+          <table class="docs-table docs-sensor-table">
+            <tr><th>Sensor</th><th>Measures</th><th>Bus</th><th>Range</th><th>Status</th></tr>
+            <tr><td>DHT11</td><td>Temperature, Humidity</td><td><span class="docs-bus-chip">GPIO</span></td><td>0–50 °C</td><td class="docs-supported">Supported</td></tr>
+            <tr><td>DHT22 / AM2302</td><td>Temperature, Humidity</td><td><span class="docs-bus-chip">GPIO</span></td><td>−40–80 °C</td><td class="docs-supported">Supported</td></tr>
+            <tr><td>Analog Input</td><td>Generic 0–100%</td><td><span class="docs-bus-chip">Analog</span></td><td>0–100 %</td><td class="docs-supported">Supported</td></tr>
+            <tr><td>BME280</td><td>Temp, Humidity, Pressure</td><td><span class="docs-bus-chip">I2C</span></td><td>−40–85 °C</td><td class="docs-engineering">Engineering</td></tr>
+            <tr><td>DS18B20</td><td>Temperature (waterproof)</td><td><span class="docs-bus-chip">GPIO</span></td><td>−55–125 °C</td><td class="docs-engineering">Engineering</td></tr>
+            <tr><td>Voltage sensor</td><td>AC/DC voltage</td><td><span class="docs-bus-chip">Analog</span></td><td>0–500 V</td><td class="docs-engineering">Engineering</td></tr>
+            <tr><td>Current sensor</td><td>AC/DC current</td><td><span class="docs-bus-chip">Analog</span></td><td>0–30 A</td><td class="docs-engineering">Engineering</td></tr>
+            <tr><td>Water level</td><td>Ultrasonic / float level</td><td><span class="docs-bus-chip">GPIO</span></td><td>0–400 cm</td><td class="docs-engineering">Engineering</td></tr>
+            <tr><td>Pressure sensor</td><td>Barometric / process</td><td><span class="docs-bus-chip">I2C</span></td><td>300–1100 hPa</td><td class="docs-engineering">Engineering</td></tr>
+            <tr><td>Soil moisture</td><td>Capacitive moisture</td><td><span class="docs-bus-chip">Analog</span></td><td>0–100 %</td><td class="docs-engineering">Engineering</td></tr>
+            <tr><td>Flow rate</td><td>Pulse-counting flow</td><td><span class="docs-bus-chip">GPIO</span></td><td>0–60 L/min</td><td class="docs-engineering">Engineering</td></tr>
+            <tr><td>Digital contact</td><td>Door/window, limit switch</td><td><span class="docs-bus-chip">GPIO</span></td><td>Open / Closed</td><td class="docs-engineering">Engineering</td></tr>
           </table>
           <div class="docs-callout">
-            <strong>Supported</strong> means the driver is built in and tested. <strong>Engineering</strong> means the driver exists but is not yet validated in production — use at your own risk, and expect updates in future firmware.
+            <strong>Supported</strong> means the driver is built in and tested — just wire the sensor and commission it in Hardware Studio. <strong>Engineering</strong> means the hardware interface is defined but the firmware driver is not yet implemented. You can see exactly what hardware and firmware work is needed for each engineering sensor in Settings → Hardware Studio.
           </div>
         </div>
       </details>
