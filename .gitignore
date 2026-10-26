@@ -1,4 +1,21 @@
+# Credentials (contains real Wi-Fi passwords and auth secrets)
 firmware/**/secrets.h
+
+# Build artifacts
 build/
+*.bin
+*.elf
+
+# IDE / editor
 .vscode/
 .pio/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
