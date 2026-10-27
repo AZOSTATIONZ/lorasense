@@ -1270,3 +1270,12 @@ details[open] > .docs-heading::before { transform: rotate(90deg); }
   font-weight: 600; color: var(--text); opacity: 0.5;
 }
 .nh-stat svg { width: 12px; height: 12px; vertical-align: -1px; }
+
+/* Schedule rule UI */
+.sched-days { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.sched-days label { font-size: 13px; display: flex; align-items: center; gap: 3px; }
+.rule-type-badge { font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: 600; vertical-align: middle; }
+.rule-type-badge.sched { background: var(--accent-soft); color: var(--accent); }
+.clock-status { padding: 6px 10px; border-radius: 6px; font-size: 13px; margin-bottom: 8px; }
+.clock-ok { background: rgba(22,163,74,0.1); color: var(--on); }
+.clock-warn { background: rgba(217,119,6,0.1); color: var(--pending); }

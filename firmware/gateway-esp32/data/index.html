@@ -381,41 +381,81 @@
           <input type="text" id="rule-name" maxlength="31" placeholder="e.g. Fan on when hot">
         </div>
         <div class="form-row">
-          <label>Sensor</label>
-          <select id="rule-sensor">
-            <option value="0">Temperature</option>
-            <option value="1">Humidity</option>
-            <option value="2">Analog</option>
+          <label>Rule type</label>
+          <select id="rule-type" onchange="toggleRuleTypeFields()">
+            <option value="0">Sensor</option>
+            <option value="1">Schedule</option>
           </select>
         </div>
-        <div class="form-row">
-          <label>Condition</label>
-          <select id="rule-condition">
-            <option value="0">Above</option>
-            <option value="1">Below</option>
-          </select>
+        <div id="sensor-fields">
+          <div class="form-row">
+            <label>Sensor</label>
+            <select id="rule-sensor">
+              <option value="0">Temperature</option>
+              <option value="1">Humidity</option>
+              <option value="2">Analog</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>Condition</label>
+            <select id="rule-condition">
+              <option value="0">Above</option>
+              <option value="1">Below</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>Threshold</label>
+            <input type="number" id="rule-threshold" step="0.1" placeholder="30.0">
+          </div>
+          <div class="form-row">
+            <label>Hysteresis</label>
+            <input type="number" id="rule-hysteresis" step="0.1" value="2.0">
+          </div>
+          <div class="form-row">
+            <label>Duration (s)</label>
+            <input type="number" id="rule-duration" min="0" step="1" value="0" placeholder="0 = instant">
+          </div>
+          <div class="form-row">
+            <label>Cooldown (s)</label>
+            <input type="number" id="rule-cooldown" min="0" step="1" value="0" placeholder="0 = none">
+          </div>
         </div>
-        <div class="form-row">
-          <label>Threshold</label>
-          <input type="number" id="rule-threshold" step="0.1" placeholder="30.0">
-        </div>
-        <div class="form-row">
-          <label>Hysteresis</label>
-          <input type="number" id="rule-hysteresis" step="0.1" value="2.0">
+        <div id="schedule-fields" style="display:none">
+          <div class="form-row">
+            <label>Start time</label>
+            <input type="time" id="rule-sched-start" value="06:00">
+          </div>
+          <div class="form-row">
+            <label>Stop time</label>
+            <input type="time" id="rule-sched-stop" value="18:00">
+          </div>
+          <div class="form-row">
+            <label>Days</label>
+            <div class="sched-days" id="rule-sched-days">
+              <label><input type="checkbox" value="0" checked> Sun</label>
+              <label><input type="checkbox" value="1" checked> Mon</label>
+              <label><input type="checkbox" value="2" checked> Tue</label>
+              <label><input type="checkbox" value="3" checked> Wed</label>
+              <label><input type="checkbox" value="4" checked> Thu</label>
+              <label><input type="checkbox" value="5" checked> Fri</label>
+              <label><input type="checkbox" value="6" checked> Sat</label>
+            </div>
+          </div>
         </div>
         <div class="form-row">
           <label>Equipment</label>
           <select id="rule-equipment"></select>
         </div>
-        <div class="form-row">
-          <label>Duration (s)</label>
-          <input type="number" id="rule-duration" min="0" step="1" value="0" placeholder="0 = instant">
-        </div>
-        <div class="form-row">
-          <label>Cooldown (s)</label>
-          <input type="number" id="rule-cooldown" min="0" step="1" value="0" placeholder="0 = none">
-        </div>
         <button class="btn-small" id="add-rule-btn">Add rule</button>
+      </div>
+      <div class="settings-section" id="clock-section">
+        <h4>Gateway Clock</h4>
+        <p class="wizard-desc" style="margin:0 0 8px;font-size:12px;color:var(--muted)">Schedule rules need a time reference. Set the current time below.</p>
+        <div id="clock-status" class="clock-status">Clock not set</div>
+        <div class="form-row">
+          <label>Set from device</label>
+          <button class="btn-small" id="set-clock-btn">Sync now</button>
+        </div>
       </div>
     </section>
 

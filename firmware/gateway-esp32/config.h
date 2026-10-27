@@ -73,9 +73,13 @@ struct SensorInstance {
 };
 
 // --- Automation rule ---
+const uint8_t RULE_SENSOR   = 0;
+const uint8_t RULE_SCHEDULE = 1;
+
 struct AutomationRule {
   char    id[ID_LEN];
   char    name[NAME_LEN];
+  uint8_t ruleType;        // RULE_SENSOR or RULE_SCHEDULE
   uint8_t sensor;          // 0 = temperature, 1 = humidity, 2 = analog
   uint8_t condition;       // 0 = above, 1 = below
   int16_t thresholdX10;    // e.g. 300 = 30.0°C
@@ -84,6 +88,10 @@ struct AutomationRule {
   bool    enabled;
   uint16_t durationS;      // sensor must exceed threshold for this many seconds
   uint16_t cooldownS;      // minimum seconds between re-activations
+  // Schedule fields (RULE_SCHEDULE only)
+  uint16_t schedStartMin;  // start time in minutes from midnight (0-1439)
+  uint16_t schedStopMin;   // stop time in minutes from midnight (0-1439)
+  uint8_t  schedDays;      // bitmask: bit0=Sun .. bit6=Sat (0x7F=every day)
   // --- runtime state (not persisted) ---
   bool     triggered;
   uint32_t exceedSince;    // millis() when condition first became true (0 = not exceeding)
@@ -452,6 +460,7 @@ public:
       AutomationRule &r = rules[ruleCount];
       strlcpy(r.id, obj["id"] | "", ID_LEN);
       strlcpy(r.name, obj["name"] | "", NAME_LEN);
+      r.ruleType      = obj["rule_type"] | RULE_SENSOR;
       r.sensor        = obj["sensor"] | 0;
       r.condition     = obj["condition"] | 0;
       r.thresholdX10  = obj["threshold"] | 0;
@@ -460,6 +469,9 @@ public:
       r.enabled       = obj["enabled"] | true;
       r.durationS     = obj["duration_s"] | 0;
       r.cooldownS     = obj["cooldown_s"] | 0;
+      r.schedStartMin = obj["sched_start"] | 0;
+      r.schedStopMin  = obj["sched_stop"] | 0;
+      r.schedDays     = obj["sched_days"] | 0x7F;
       r.triggered     = false;
       r.exceedSince   = 0;
       r.lastActionAt  = 0;
@@ -481,6 +493,7 @@ public:
       JsonObject obj = arr.add<JsonObject>();
       obj["id"]         = r.id;
       obj["name"]       = r.name;
+      obj["rule_type"]  = r.ruleType;
       obj["sensor"]     = r.sensor;
       obj["condition"]  = r.condition;
       obj["threshold"]  = r.thresholdX10;
@@ -489,6 +502,11 @@ public:
       obj["enabled"]    = r.enabled;
       if (r.durationS)  obj["duration_s"]  = r.durationS;
       if (r.cooldownS)  obj["cooldown_s"]  = r.cooldownS;
+      if (r.ruleType == RULE_SCHEDULE) {
+        obj["sched_start"] = r.schedStartMin;
+        obj["sched_stop"]  = r.schedStopMin;
+        obj["sched_days"]  = r.schedDays;
+      }
     }
     serializeJson(doc, f);
     f.close();
@@ -501,14 +519,16 @@ public:
     return nullptr;
   }
 
-  bool addRule(const char *id, const char *name, uint8_t sensor, uint8_t condition,
+  bool addRule(const char *id, const char *name, uint8_t ruleType, uint8_t sensor, uint8_t condition,
                int16_t thresholdX10, int16_t hysteresisX10, const char *equipmentId, bool enabled,
-               uint16_t durationS = 0, uint16_t cooldownS = 0) {
+               uint16_t durationS = 0, uint16_t cooldownS = 0,
+               uint16_t schedStart = 0, uint16_t schedStop = 0, uint8_t schedDays = 0x7F) {
     if (ruleCount >= MAX_RULES) return false;
     if (findRule(id)) return false;
     AutomationRule &r = rules[ruleCount];
     strlcpy(r.id, id, ID_LEN);
     strlcpy(r.name, name, NAME_LEN);
+    r.ruleType      = ruleType;
     r.sensor        = sensor;
     r.condition     = condition;
     r.thresholdX10  = thresholdX10;
@@ -517,6 +537,9 @@ public:
     r.enabled       = enabled;
     r.durationS     = durationS;
     r.cooldownS     = cooldownS;
+    r.schedStartMin = schedStart;
+    r.schedStopMin  = schedStop;
+    r.schedDays     = schedDays;
     r.triggered     = false;
     r.exceedSince   = 0;
     r.lastActionAt  = 0;
@@ -525,12 +548,14 @@ public:
     return saveRules();
   }
 
-  bool updateRule(const char *id, const char *name, uint8_t sensor, uint8_t condition,
+  bool updateRule(const char *id, const char *name, uint8_t ruleType, uint8_t sensor, uint8_t condition,
                   int16_t thresholdX10, int16_t hysteresisX10, const char *equipmentId, bool enabled,
-                  uint16_t durationS = 0, uint16_t cooldownS = 0) {
+                  uint16_t durationS = 0, uint16_t cooldownS = 0,
+                  uint16_t schedStart = 0, uint16_t schedStop = 0, uint8_t schedDays = 0x7F) {
     AutomationRule *r = findRule(id);
     if (!r) return false;
     if (name[0]) strlcpy(r->name, name, NAME_LEN);
+    r->ruleType      = ruleType;
     r->sensor        = sensor;
     r->condition     = condition;
     r->thresholdX10  = thresholdX10;
@@ -539,6 +564,9 @@ public:
     r->enabled       = enabled;
     r->durationS     = durationS;
     r->cooldownS     = cooldownS;
+    r->schedStartMin = schedStart;
+    r->schedStopMin  = schedStop;
+    r->schedDays     = schedDays;
     return saveRules();
   }
 

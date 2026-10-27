@@ -64,6 +64,35 @@ const uint32_t HISTORY_INTERVAL_MS = 300000;  // 5 minutes
 uint32_t lastHistorySample = 0;
 bool firstSampleTaken = false;
 
+// --- Software clock (user-set, no RTC/NTP in AP mode) ---
+uint32_t clockSetAt    = 0;    // millis() when setGatewayClock was called
+uint32_t clockBaseMin  = 0;    // minutes-from-midnight at that moment
+uint8_t  clockDay      = 0;    // day-of-week at set time (0=Sun..6=Sat)
+bool     clockValid    = false;
+
+void setGatewayClock(uint8_t hour, uint8_t minute, uint8_t dayOfWeek) {
+  clockSetAt   = millis();
+  clockBaseMin = (uint32_t)hour * 60 + minute;
+  clockDay     = dayOfWeek;
+  clockValid   = true;
+  Serial.print("[Clock] Set to "); Serial.print(hour); Serial.print(":");
+  if (minute < 10) Serial.print("0");
+  Serial.print(minute); Serial.print(" day="); Serial.println(dayOfWeek);
+}
+
+uint16_t gatewayMinuteOfDay() {
+  if (!clockValid) return 0xFFFF;
+  uint32_t elapsed = (millis() - clockSetAt) / 60000;
+  return (clockBaseMin + elapsed) % 1440;
+}
+
+uint8_t gatewayDayOfWeek() {
+  if (!clockValid) return 0xFF;
+  uint32_t elapsed = (millis() - clockSetAt) / 60000;
+  uint32_t totalMin = clockBaseMin + elapsed;
+  return (clockDay + totalMin / 1440) % 7;
+}
+
 // --- Config sync ---
 uint8_t  configVersion    = 0;
 const uint32_t CONFIG_PUSH_INTERVAL_MS = 10000;  // retry every 10s until ACK
@@ -421,6 +450,13 @@ void handleState() {
   doc["commission_label"] = commissionName(config.env.commissionStatus);
   doc["config_version"] = configVersion;
   doc["config_synced"]  = allNodesSynced();
+  doc["clock_valid"]    = clockValid;
+  if (clockValid) {
+    uint16_t cm = gatewayMinuteOfDay();
+    doc["clock_hour"]   = cm / 60;
+    doc["clock_minute"] = cm % 60;
+    doc["clock_day"]    = gatewayDayOfWeek();
+  }
   if (pn && pn->lastTelemetryAt > 0) {
     doc["reading_age_s"]  = (now - pn->lastTelemetryAt) / 1000;
   }
@@ -528,12 +564,19 @@ void handleState() {
     if (!r.enabled) continue;
     JsonObject ro = rulesArr.add<JsonObject>();
     ro["name"]      = r.name;
+    ro["rule_type"] = r.ruleType;
     ro["equipment"] = r.equipmentId;
     ro["triggered"] = r.triggered;
     ro["enabled"]   = r.enabled;
-    if (r.durationS)  ro["duration_s"]  = r.durationS;
-    if (r.cooldownS)  ro["cooldown_s"]  = r.cooldownS;
-    if (r.faultActive) ro["fault"] = true;
+    if (r.ruleType == RULE_SENSOR) {
+      if (r.durationS)  ro["duration_s"]  = r.durationS;
+      if (r.cooldownS)  ro["cooldown_s"]  = r.cooldownS;
+      if (r.faultActive) ro["fault"] = true;
+    } else if (r.ruleType == RULE_SCHEDULE) {
+      ro["sched_start"] = r.schedStartMin;
+      ro["sched_stop"]  = r.schedStopMin;
+      ro["sched_days"]  = r.schedDays;
+    }
   }
 
   String json;
@@ -986,6 +1029,49 @@ void handleCommission() {
 }
 
 // =====================================================================
+//  HTTP: Clock API
+// =====================================================================
+void handleGetClock() {
+  if (!auth.check(server, ROLE_USER)) return;
+  JsonDocument doc;
+  doc["valid"] = clockValid;
+  if (clockValid) {
+    uint16_t cm = gatewayMinuteOfDay();
+    doc["hour"]   = cm / 60;
+    doc["minute"] = cm % 60;
+    doc["day"]    = gatewayDayOfWeek();
+  }
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
+}
+
+void handleSetClock() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
+    return;
+  }
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain")) != DeserializationError::Ok) {
+    server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+    return;
+  }
+  int hour   = doc["hour"]   | -1;
+  int minute = doc["minute"] | -1;
+  int day    = doc["day"]    | -1;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || day < 0 || day > 6) {
+    server.send(400, "application/json", "{\"error\":\"need hour(0-23), minute(0-59), day(0=Sun..6=Sat)\"}");
+    return;
+  }
+  setGatewayClock((uint8_t)hour, (uint8_t)minute, (uint8_t)day);
+  char lm[48];
+  snprintf(lm, sizeof(lm), "Clock set to %02d:%02d day=%d", hour, minute, day);
+  eventLog.add("system", lm);
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// =====================================================================
 //  HTTP: Rules API
 // =====================================================================
 void handleGetRules() {
@@ -997,6 +1083,7 @@ void handleGetRules() {
     JsonObject obj = arr.add<JsonObject>();
     obj["id"]         = r.id;
     obj["name"]       = r.name;
+    obj["rule_type"]  = r.ruleType;
     obj["sensor"]     = r.sensor;
     obj["condition"]  = r.condition;
     obj["threshold"]  = r.thresholdX10;
@@ -1004,6 +1091,13 @@ void handleGetRules() {
     obj["equipment"]  = r.equipmentId;
     obj["enabled"]    = r.enabled;
     obj["triggered"]  = r.triggered;
+    obj["duration_s"] = r.durationS;
+    obj["cooldown_s"] = r.cooldownS;
+    if (r.ruleType == RULE_SCHEDULE) {
+      obj["sched_start"] = r.schedStartMin;
+      obj["sched_stop"]  = r.schedStopMin;
+      obj["sched_days"]  = r.schedDays;
+    }
   }
   String json;
   serializeJson(doc, json);
@@ -1032,6 +1126,7 @@ void handleAddRule() {
     server.send(404, "application/json", "{\"error\":\"equipment not found\"}");
     return;
   }
+  uint8_t ruleType  = doc["rule_type"] | 0;
   uint8_t sensor    = doc["sensor"] | 0;
   uint8_t condition = doc["condition"] | 0;
   int16_t threshold = doc["threshold"] | 0;
@@ -1039,8 +1134,11 @@ void handleAddRule() {
   bool enabled      = doc["enabled"] | true;
   uint16_t durationS = doc["duration_s"] | 0;
   uint16_t cooldownS = doc["cooldown_s"] | 0;
+  uint16_t schedStart = doc["sched_start"] | 0;
+  uint16_t schedStop  = doc["sched_stop"] | 0;
+  uint8_t  schedDays  = doc["sched_days"] | 0x7F;
 
-  if (!config.addRule(id, name, sensor, condition, threshold, hyst, eqId, enabled, durationS, cooldownS)) {
+  if (!config.addRule(id, name, ruleType, sensor, condition, threshold, hyst, eqId, enabled, durationS, cooldownS, schedStart, schedStop, schedDays)) {
     server.send(409, "application/json", "{\"error\":\"rule exists or limit reached\"}");
     return;
   }
@@ -1069,6 +1167,7 @@ void handleUpdateRule() {
     server.send(404, "application/json", "{\"error\":\"equipment not found\"}");
     return;
   }
+  uint8_t ruleType  = doc["rule_type"] | 0;
   uint8_t sensor    = doc["sensor"] | 0;
   uint8_t condition = doc["condition"] | 0;
   int16_t threshold = doc["threshold"] | 0;
@@ -1076,8 +1175,11 @@ void handleUpdateRule() {
   bool enabled      = doc["enabled"] | true;
   uint16_t durationS = doc["duration_s"] | 0;
   uint16_t cooldownS = doc["cooldown_s"] | 0;
+  uint16_t schedStart = doc["sched_start"] | 0;
+  uint16_t schedStop  = doc["sched_stop"] | 0;
+  uint8_t  schedDays  = doc["sched_days"] | 0x7F;
 
-  if (!config.updateRule(id, name, sensor, condition, threshold, hyst, eqId, enabled, durationS, cooldownS)) {
+  if (!config.updateRule(id, name, ruleType, sensor, condition, threshold, hyst, eqId, enabled, durationS, cooldownS, schedStart, schedStop, schedDays)) {
     server.send(404, "application/json", "{\"error\":\"rule not found\"}");
     return;
   }
@@ -1588,6 +1690,43 @@ void evaluateRules() {
     // Manual override — skip automation entirely
     if (out.manualOverride) continue;
 
+    // ---- Schedule-based rules ----
+    if (r.ruleType == RULE_SCHEDULE) {
+      if (!clockValid) continue;
+      uint16_t nowMin = gatewayMinuteOfDay();
+      uint8_t  nowDay = gatewayDayOfWeek();
+      if (nowMin == 0xFFFF || nowDay == 0xFF) continue;
+
+      bool dayMatch = (r.schedDays >> nowDay) & 1;
+      bool inWindow;
+      if (r.schedStartMin <= r.schedStopMin) {
+        inWindow = (nowMin >= r.schedStartMin && nowMin < r.schedStopMin);
+      } else {
+        inWindow = (nowMin >= r.schedStartMin || nowMin < r.schedStopMin);
+      }
+      bool shouldBeOn = dayMatch && inWindow;
+
+      if (shouldBeOn && !r.triggered) {
+        r.triggered = true;
+        r.lastActionAt = now;
+        sendOutputCmd(out, true);
+        actionLog.add(r.name, "SCHED_ON", eq->name, nowMin);
+        { char lm[64]; snprintf(lm, sizeof(lm), "Schedule '%s' -> %s ON", r.name, eq->name); eventLog.add("rule", lm); }
+        Serial.print("[Auto] Schedule '"); Serial.print(r.name);
+        Serial.print("' -> "); Serial.print(eq->name); Serial.println(" ON");
+      } else if (!shouldBeOn && r.triggered) {
+        r.triggered = false;
+        r.lastActionAt = now;
+        sendOutputCmd(out, false);
+        actionLog.add(r.name, "SCHED_OFF", eq->name, nowMin);
+        { char lm[64]; snprintf(lm, sizeof(lm), "Schedule '%s' -> %s OFF", r.name, eq->name); eventLog.add("rule", lm); }
+        Serial.print("[Auto] Schedule '"); Serial.print(r.name);
+        Serial.print("' -> "); Serial.print(eq->name); Serial.println(" OFF");
+      }
+      continue;
+    }
+
+    // ---- Sensor-based rules ----
     // Find the node that owns this equipment's sensors
     NodeState *rns = findNodeById(eq->nodeId);
     uint32_t telemetryAge = (rns && rns->lastTelemetryAt > 0) ? (now - rns->lastTelemetryAt) : UINT32_MAX;
@@ -1980,6 +2119,8 @@ void setup() {
   server.on("/api/commission",          HTTP_POST,   handleCommission);
 
   // Rules API
+  server.on("/api/clock",              HTTP_GET,    handleGetClock);
+  server.on("/api/clock",              HTTP_POST,   handleSetClock);
   server.on("/api/rules",              HTTP_GET,    handleGetRules);
   server.on("/api/rules",              HTTP_POST,   handleAddRule);
   server.on("/api/rules",              HTTP_PUT,    handleUpdateRule);

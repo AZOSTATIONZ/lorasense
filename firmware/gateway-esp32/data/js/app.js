@@ -1045,7 +1045,8 @@ function drawActiveRules(s) {
     }
     var div = document.createElement('div');
     div.className = 'active-rule-bar';
-    div.innerHTML = '<span class="ar-icon">' + ICO.zap() + '</span> <span class="ar-name">' +
+    var icon = r.rule_type === 1 ? '⏰' : ICO.zap();
+    div.innerHTML = '<span class="ar-icon">' + icon + '</span> <span class="ar-name">' +
       escHtml(r.name) + '</span> → ' + escHtml(eqName);
     box.appendChild(div);
   }
@@ -1268,6 +1269,7 @@ function refresh() {
       drawStatusBar(s);
       drawHealthStrip(s);
       drawActiveRules(s);
+      updateClockStatus(s);
       loadNodeHealth();
       drawDevices(s);
       lastQuickDevices = s.devices;
@@ -1389,6 +1391,42 @@ function escHtml(s) {
   d.textContent = s;
   return d.innerHTML;
 }
+
+function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+
+function toggleRuleTypeFields() {
+  var rt = parseInt(document.getElementById('rule-type').value);
+  document.getElementById('sensor-fields').style.display = rt === 0 ? '' : 'none';
+  document.getElementById('schedule-fields').style.display = rt === 1 ? '' : 'none';
+}
+
+function updateClockStatus(state) {
+  var el = document.getElementById('clock-status');
+  if (!el) return;
+  if (state && state.clock_valid) {
+    var dayLabels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    el.textContent = 'Gateway time: ' + pad2(state.clock_hour) + ':' + pad2(state.clock_minute) +
+                     ' (' + dayLabels[state.clock_day] + ')';
+    el.className = 'clock-status clock-ok';
+  } else {
+    el.textContent = 'Clock not set — schedule rules inactive';
+    el.className = 'clock-status clock-warn';
+  }
+}
+
+(function() {
+  var btn = document.getElementById('set-clock-btn');
+  if (btn) btn.onclick = function() {
+    var now = new Date();
+    var data = { hour: now.getHours(), minute: now.getMinutes(), day: now.getDay() };
+    fetch('/api/clock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(function(res) { return res.json(); })
+      .then(function(r) { if (r.ok) loadState(); });
+  };
+})();
 
 // --- Save environment ---
 document.getElementById('save-env-btn').onclick = function() {
@@ -1530,6 +1568,8 @@ function renderRules(cfg) {
   var condNames   = ['above', 'below'];
   var unitNames   = ['°C', '%', '%'];
 
+  var dayLabels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
   for (var i = 0; i < rules.length; i++) {
     var r = rules[i];
     var div = document.createElement('div');
@@ -1540,21 +1580,32 @@ function renderRules(cfg) {
       if (cfg.equipment[j].id === r.equipment) { eqName = cfg.equipment[j].name; break; }
     }
 
-    var thresh = (r.threshold / 10).toFixed(1);
-    var hyst = (r.hysteresis / 10).toFixed(1);
-    var desc = sensorNames[r.sensor] + ' ' + condNames[r.condition] + ' ' +
-              thresh + unitNames[r.sensor] + ' (±' + hyst + ')';
-    var extras = [];
-    if (r.duration_s) extras.push('hold ' + r.duration_s + 's');
-    if (r.cooldown_s) extras.push('cooldown ' + r.cooldown_s + 's');
-    var extraText = extras.length ? ' [' + extras.join(', ') + ']' : '';
+    var desc, extraText = '';
+    if (r.rule_type === 1) {
+      var sh = Math.floor(r.sched_start / 60), sm = r.sched_start % 60;
+      var eh = Math.floor(r.sched_stop / 60), em = r.sched_stop % 60;
+      var timeStr = pad2(sh) + ':' + pad2(sm) + ' – ' + pad2(eh) + ':' + pad2(em);
+      var activeDays = [];
+      for (var d = 0; d < 7; d++) { if ((r.sched_days >> d) & 1) activeDays.push(dayLabels[d]); }
+      desc = '⏰ ' + timeStr + ' ' + activeDays.join(',');
+    } else {
+      var thresh = (r.threshold / 10).toFixed(1);
+      var hyst = (r.hysteresis / 10).toFixed(1);
+      desc = sensorNames[r.sensor] + ' ' + condNames[r.condition] + ' ' +
+                thresh + unitNames[r.sensor] + ' (±' + hyst + ')';
+      var extras = [];
+      if (r.duration_s) extras.push('hold ' + r.duration_s + 's');
+      if (r.cooldown_s) extras.push('cooldown ' + r.cooldown_s + 's');
+      extraText = extras.length ? ' [' + extras.join(', ') + ']' : '';
+    }
 
     var faultBadge = r.fault ? ' <span class="rule-fault">FAULT</span>' : '';
     var activeBadge = r.triggered ? ' <span class="rule-active">ACTIVE</span>' : '';
+    var typeBadge = r.rule_type === 1 ? '<span class="rule-type-badge sched">Schedule</span> ' : '';
 
     div.innerHTML =
       '<div class="rule-info">' +
-        '<div class="rule-name">' + escHtml(r.name) + activeBadge + faultBadge + '</div>' +
+        '<div class="rule-name">' + typeBadge + escHtml(r.name) + activeBadge + faultBadge + '</div>' +
         '<div class="rule-desc">' + desc + extraText + ' → ' + escHtml(eqName) + '</div>' +
       '</div>';
 
@@ -1630,18 +1681,33 @@ document.getElementById('add-rule-btn').onclick = function() {
   if (!eqId) return;
 
   var id = 'r_' + Date.now().toString(36);
+  var ruleType = parseInt(document.getElementById('rule-type').value);
   var data = {
     id: id,
     name: name,
-    sensor: parseInt(document.getElementById('rule-sensor').value),
-    condition: parseInt(document.getElementById('rule-condition').value),
-    threshold: Math.round(parseFloat(document.getElementById('rule-threshold').value) * 10),
-    hysteresis: Math.round(parseFloat(document.getElementById('rule-hysteresis').value) * 10),
+    rule_type: ruleType,
     equipment: eqId,
-    enabled: true,
-    duration_s: parseInt(document.getElementById('rule-duration').value) || 0,
-    cooldown_s: parseInt(document.getElementById('rule-cooldown').value) || 0
+    enabled: true
   };
+  if (ruleType === 0) {
+    data.sensor = parseInt(document.getElementById('rule-sensor').value);
+    data.condition = parseInt(document.getElementById('rule-condition').value);
+    data.threshold = Math.round(parseFloat(document.getElementById('rule-threshold').value) * 10);
+    data.hysteresis = Math.round(parseFloat(document.getElementById('rule-hysteresis').value) * 10);
+    data.duration_s = parseInt(document.getElementById('rule-duration').value) || 0;
+    data.cooldown_s = parseInt(document.getElementById('rule-cooldown').value) || 0;
+  } else {
+    var startParts = document.getElementById('rule-sched-start').value.split(':');
+    var stopParts  = document.getElementById('rule-sched-stop').value.split(':');
+    data.sched_start = parseInt(startParts[0]) * 60 + parseInt(startParts[1]);
+    data.sched_stop  = parseInt(stopParts[0]) * 60 + parseInt(stopParts[1]);
+    var dayBits = 0;
+    var dayChecks = document.querySelectorAll('#rule-sched-days input[type=checkbox]');
+    for (var i = 0; i < dayChecks.length; i++) {
+      if (dayChecks[i].checked) dayBits |= (1 << parseInt(dayChecks[i].value));
+    }
+    data.sched_days = dayBits;
+  }
 
   fetch('/api/rules', {
     method: 'POST',
@@ -1697,13 +1763,21 @@ function toggleRule(rule) {
   var data = {
     id: rule.id,
     name: rule.name,
+    rule_type: rule.rule_type || 0,
     sensor: rule.sensor,
     condition: rule.condition,
     threshold: rule.threshold,
     hysteresis: rule.hysteresis,
     equipment: rule.equipment,
-    enabled: !rule.enabled
+    enabled: !rule.enabled,
+    duration_s: rule.duration_s || 0,
+    cooldown_s: rule.cooldown_s || 0
   };
+  if (rule.rule_type === 1) {
+    data.sched_start = rule.sched_start;
+    data.sched_stop  = rule.sched_stop;
+    data.sched_days  = rule.sched_days;
+  }
   fetch('/api/rules', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
