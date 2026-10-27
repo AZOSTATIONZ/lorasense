@@ -1228,3 +1228,45 @@ details[open] > .docs-heading::before { transform: rotate(90deg); }
   display: flex; justify-content: space-between;
   font-size: 11px; color: var(--muted); margin-top: 4px;
 }
+
+/* === Phase 27: Node health grid === */
+.node-health-grid {
+  display: grid; grid-template-columns: 1fr;
+  gap: 10px;
+}
+@media (min-width: 500px) {
+  .node-health-grid { grid-template-columns: 1fr 1fr; }
+}
+.nh-card {
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px 14px; background: var(--card);
+  transition: border-color 0.2s;
+}
+.nh-card:not(.nh-offline) {
+  border-left: 3px solid var(--on);
+}
+.nh-card.nh-offline {
+  border-left: 3px solid var(--off);
+  opacity: 0.7;
+}
+.nh-header {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+.nh-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+}
+.nh-dot.online { background: var(--on); box-shadow: 0 0 6px var(--on); }
+.nh-dot.offline { background: var(--off); }
+.nh-name { font-size: 14px; flex: 1; }
+.nh-status {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.5px; color: var(--muted);
+}
+.nh-body {
+  display: flex; flex-wrap: wrap; gap: 4px 14px;
+  font-size: 12px; color: var(--muted);
+}
+.nh-stat small {
+  font-weight: 600; color: var(--text); opacity: 0.5;
+}
+.nh-stat svg { width: 12px; height: 12px; vertical-align: -1px; }

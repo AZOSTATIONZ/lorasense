@@ -638,6 +638,57 @@ function drawHealthStrip(s) {
 }
 
 // =====================================================================
+//  Phase 27: Node health grid on dashboard
+// =====================================================================
+var cachedNodeHealth = null;
+var nodeHealthTimer = null;
+
+function loadNodeHealth() {
+  fetch('/api/hw/nodes')
+    .then(function(r) { return r.json(); })
+    .then(function(nodes) {
+      cachedNodeHealth = nodes;
+      drawNodeHealthGrid();
+    });
+}
+
+function drawNodeHealthGrid() {
+  var grid = document.getElementById('node-health-grid');
+  if (!grid) return;
+  var nodes = cachedNodeHealth;
+  if (!nodes || nodes.length === 0) {
+    grid.innerHTML = '<p style="color:var(--muted);text-align:center;padding:12px 0">No nodes registered.</p>';
+    return;
+  }
+  grid.innerHTML = nodes.map(function(n) {
+    var online = n.online;
+    var dotCls = online ? 'nh-dot online' : 'nh-dot offline';
+    var statusLabel = online ? 'Online' : 'Offline';
+    var rssiHtml = '';
+    if (online && n.rssi !== undefined) {
+      var level = signalLabel(n.rssi);
+      rssiHtml = '<div class="nh-stat">' + ICO.signal() + ' <span>' + n.rssi + ' dBm</span> <small>(' + level + ')</small></div>';
+    }
+    var addr = '0x' + ('0' + n.address.toString(16)).slice(-2).toUpperCase();
+    return '<div class="nh-card' + (online ? '' : ' nh-offline') + '">' +
+      '<div class="nh-header">' +
+        '<span class="' + dotCls + '"></span>' +
+        '<strong class="nh-name">' + escHtml(n.name) + '</strong>' +
+        '<span class="nh-status">' + statusLabel + '</span>' +
+      '</div>' +
+      '<div class="nh-body">' +
+        '<div class="nh-stat"><small>ID:</small> ' + escHtml(n.id) + '</div>' +
+        '<div class="nh-stat"><small>Addr:</small> ' + addr + '</div>' +
+        '<div class="nh-stat"><small>Board:</small> ' + escHtml(n.board) + '</div>' +
+        '<div class="nh-stat"><small>FW:</small> ' + escHtml(n.fw) + '</div>' +
+        '<div class="nh-stat"><small>Sensors:</small> ' + n.sensors + '</div>' +
+        rssiHtml +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+// =====================================================================
 //  Phase 11: Trend engine, sparklines, threshold warnings, stats
 // =====================================================================
 function computeTrend(key) {
@@ -1217,6 +1268,7 @@ function refresh() {
       drawStatusBar(s);
       drawHealthStrip(s);
       drawActiveRules(s);
+      loadNodeHealth();
       drawDevices(s);
       lastQuickDevices = s.devices;
       drawQuickBar(s);
