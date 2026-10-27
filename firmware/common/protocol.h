@@ -24,9 +24,13 @@
 const uint8_t PROTOCOL_VERSION = 2;
 
 // --- Addresses ---
-const uint8_t ADDR_GATEWAY = 0x01;
-const uint8_t ADDR_NODE1   = 0x02;
+const uint8_t ADDR_GATEWAY   = 0x01;
+const uint8_t ADDR_NODE1     = 0x02;
+const uint8_t ADDR_NODE2     = 0x03;
+const uint8_t ADDR_NODE3     = 0x04;
+const uint8_t ADDR_NODE4     = 0x05;
 const uint8_t ADDR_BROADCAST = 0xFF;
+const uint8_t MAX_NODES_ADDR = 4;
 
 // --- Message types ---
 enum MsgType : uint8_t {

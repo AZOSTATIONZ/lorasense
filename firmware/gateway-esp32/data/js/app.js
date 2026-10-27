@@ -2179,6 +2179,7 @@ function loadNodes() {
           '<span>Sensors: ' + n.sensors + '</span>' +
           '<span>Free pins: ' + n.free_pins + '</span>' +
           '<span>' + (n.online ? '&#x1F7E2; Online' : '&#x1F534; Offline') + '</span>' +
+          (n.online && n.rssi !== undefined ? '<span>RSSI: ' + n.rssi + ' dBm</span>' : '') +
         '</div></div>';
     }).join('');
   });

@@ -51,9 +51,8 @@ ActionLog actionLog;
 // --- Sequence number ---
 uint8_t nextSeq = 0;
 
-// --- Node status ---
-bool nodeOnline = false;
-uint32_t lastNodeHeard = 0;
+// --- Node status (multi-node) ---
+NodeState nodeStates[MAX_NODE_SLOTS];
 const uint32_t NODE_TIMEOUT_MS = 45000;
 
 // --- Keepalive ---
@@ -67,18 +66,38 @@ bool firstSampleTaken = false;
 
 // --- Config sync ---
 uint8_t  configVersion    = 0;
-uint8_t  nodeConfigVersion = 0xFF;  // 0xFF = not yet synced
-bool     configSynced     = false;
-uint32_t lastConfigPush   = 0;
 const uint32_t CONFIG_PUSH_INTERVAL_MS = 10000;  // retry every 10s until ACK
 const uint32_t CONFIG_PUSH_INITIAL_DELAY_MS = 3000;  // wait for node after boot
 
-// --- Telemetry from node ---
-float nodeTemperature = 0;
-float nodeHumidity    = 0;
-int16_t nodeAnalogValue = -1;  // raw ADC, -1 = no sensor
-uint8_t nodeAnalogPin   = 0xFF;
-uint32_t lastTelemetryAt = 0;  // uptime (ms) when last telemetry was received
+// --- Helper: find NodeState by LoRa address ---
+NodeState *findNodeByAddress(uint8_t addr) {
+  for (int i = 0; i < MAX_NODE_SLOTS; i++) {
+    if (nodeStates[i].loraAddress == addr) return &nodeStates[i];
+  }
+  return nullptr;
+}
+
+// --- Helper: find NodeState by node ID (from config) ---
+NodeState *findNodeById(const char *nodeId) {
+  NodeInstance *ni = hw.findNode(nodeId);
+  if (!ni) return nullptr;
+  return findNodeByAddress(ni->address);
+}
+
+// --- Helper: get the primary node (first registered, backward compat) ---
+NodeState *primaryNode() {
+  if (hw.nodeCount > 0) return findNodeByAddress(hw.nodes[0].address);
+  return &nodeStates[0];
+}
+
+// --- Helper: is any node online? ---
+bool anyNodeOnline() {
+  for (int i = 0; i < hw.nodeCount; i++) {
+    NodeState *ns = findNodeByAddress(hw.nodes[i].address);
+    if (ns && ns->online) return true;
+  }
+  return false;
+}
 
 // =====================================================================
 //  LittleFS file server
@@ -115,8 +134,16 @@ void sendCommand(uint8_t outputIdx) {
   cmd.deviceIndex = outputIdx;
   cmd.requestedOn = o.requestedOn ? 1 : 0;
 
+  // Find the target node address for this relay output
+  uint8_t targetAddr = ADDR_NODE1;  // default for backward compat
+  Equipment *owner = config.findByOutput(outputIdx);
+  if (owner) {
+    NodeInstance *ni = hw.findNode(owner->nodeId);
+    if (ni) targetAddr = ni->address;
+  }
+
   uint8_t buf[FRAME_MAX];
-  uint8_t len = buildFrame(buf, ADDR_NODE1, ADDR_GATEWAY,
+  uint8_t len = buildFrame(buf, targetAddr, ADDR_GATEWAY,
                            MSG_CMD_SET, o.seq, &cmd, sizeof(cmd));
 
   LoRa.beginPacket();
@@ -135,31 +162,35 @@ void sendCommand(uint8_t outputIdx) {
 // =====================================================================
 //  Handle incoming telemetry
 // =====================================================================
-void handleTelemetry(const uint8_t *buf, uint8_t len) {
-  // Accept both old (5-byte) and new (8-byte) telemetry payloads
+void handleTelemetry(const uint8_t *buf, uint8_t len, uint8_t srcAddr) {
   uint8_t payloadLen = len - HEADER_SIZE - CRC_SIZE;
-  if (payloadLen < 5) return;  // minimum: temp + hum + relays
+  if (payloadLen < 5) return;
+
+  NodeState *ns = findNodeByAddress(srcAddr);
+  if (!ns) return;
 
   TelemetryPayload *t = (TelemetryPayload *)(buf + HEADER_SIZE);
-  nodeTemperature = t->temperatureX10 / 10.0;
-  nodeHumidity    = t->humidityX10    / 10.0;
+  ns->temperature = t->temperatureX10 / 10.0;
+  ns->humidity    = t->humidityX10    / 10.0;
 
   for (int i = 0; i < MAX_OUTPUTS && i < 8; i++) {
     outputs[i].confirmedOn = (t->relayStates >> i) & 1;
   }
 
   if (payloadLen >= sizeof(TelemetryPayload)) {
-    nodeAnalogValue = t->analogValue;
-    nodeAnalogPin   = t->analogPin;
+    ns->analogValue = t->analogValue;
+    ns->analogPin   = t->analogPin;
   }
 
-  nodeOnline = true;
-  lastNodeHeard = millis();
-  lastTelemetryAt = millis();
-  Serial.print("[LoRa] Telemetry: temp="); Serial.print(nodeTemperature);
-  Serial.print(" hum="); Serial.print(nodeHumidity);
-  if (nodeAnalogPin != 0xFF) {
-    Serial.print(" adc="); Serial.print(nodeAnalogValue);
+  ns->online = true;
+  ns->lastHeard = millis();
+  ns->lastTelemetryAt = millis();
+  ns->rssi = LoRa.packetRssi();
+  Serial.print("[LoRa] Telemetry from 0x"); Serial.print(srcAddr, HEX);
+  Serial.print(": temp="); Serial.print(ns->temperature);
+  Serial.print(" hum="); Serial.print(ns->humidity);
+  if (ns->analogPin != 0xFF) {
+    Serial.print(" adc="); Serial.print(ns->analogValue);
   }
   Serial.print(" relays=0b"); Serial.println(t->relayStates, BIN);
 }
@@ -186,35 +217,40 @@ void checkIncoming() {
     return;
   }
 
+  // Find the NodeState for this source address
+  NodeState *srcNode = findNodeByAddress(hdr->src);
+  if (srcNode) {
+    srcNode->online = true;
+    srcNode->lastHeard = millis();
+    srcNode->rssi = LoRa.packetRssi();
+  }
+
   if (hdr->type == MSG_ACK) {
     AckPayload *ack = (AckPayload *)(buf + HEADER_SIZE);
-    nodeOnline = true;
-    lastNodeHeard = millis();
-    // Match ACK to the output waiting for it
     if (ack->deviceIndex < MAX_OUTPUTS &&
         outputs[ack->deviceIndex].status == CMD_SENT &&
         hdr->seq == outputs[ack->deviceIndex].seq) {
       outputs[ack->deviceIndex].confirmedOn = (ack->actualOn == 1);
       outputs[ack->deviceIndex].status = CMD_CONFIRMED;
-      Serial.print("[LoRa] ACK output="); Serial.print(ack->deviceIndex);
+      Serial.print("[LoRa] ACK from 0x"); Serial.print(hdr->src, HEX);
+      Serial.print(" output="); Serial.print(ack->deviceIndex);
       Serial.print(" on="); Serial.println(ack->actualOn);
     }
   }
-  else if (hdr->type == MSG_TELEMETRY) handleTelemetry(buf, n);
+  else if (hdr->type == MSG_TELEMETRY) handleTelemetry(buf, n, hdr->src);
   else if (hdr->type == MSG_HEARTBEAT) {
-    nodeOnline = true; lastNodeHeard = millis();
-    Serial.println("[LoRa] Heartbeat received");
+    Serial.print("[LoRa] Heartbeat from 0x"); Serial.println(hdr->src, HEX);
   }
   else if (hdr->type == MSG_CONFIG_ACK) {
     if (n >= (int)(HEADER_SIZE + sizeof(ConfigAckPayload) + CRC_SIZE)) {
       ConfigAckPayload *ack = (ConfigAckPayload *)(buf + HEADER_SIZE);
-      nodeConfigVersion = ack->version;
-      if (ack->version == configVersion) {
-        configSynced = true;
-        Serial.print("[Sync] Node confirmed config v"); Serial.println(ack->version);
-      } else {
-        Serial.print("[Sync] Node ACK v"); Serial.print(ack->version);
-        Serial.print(" but current is v"); Serial.println(configVersion);
+      if (srcNode) {
+        srcNode->configVersion = ack->version;
+        if (ack->version == configVersion) {
+          srcNode->configSynced = true;
+          Serial.print("[Sync] Node 0x"); Serial.print(hdr->src, HEX);
+          Serial.print(" confirmed config v"); Serial.println(ack->version);
+        }
       }
     }
   }
@@ -224,12 +260,16 @@ void checkIncoming() {
 //  Send keepalive
 // =====================================================================
 void sendKeepalive() {
-  uint8_t buf[FRAME_MAX];
-  uint8_t len = buildFrame(buf, ADDR_NODE1, ADDR_GATEWAY,
-                           MSG_KEEPALIVE, 0, nullptr, 0);
-  LoRa.beginPacket();
-  LoRa.write(buf, len);
-  LoRa.endPacket();
+  for (int i = 0; i < hw.nodeCount; i++) {
+    if (!hw.nodes[i].active) continue;
+    uint8_t buf[FRAME_MAX];
+    uint8_t len = buildFrame(buf, hw.nodes[i].address, ADDR_GATEWAY,
+                             MSG_KEEPALIVE, 0, nullptr, 0);
+    LoRa.beginPacket();
+    LoRa.write(buf, len);
+    LoRa.endPacket();
+    if (hw.nodeCount > 1) delay(5);
+  }
 }
 
 // =====================================================================
@@ -237,17 +277,30 @@ void sendKeepalive() {
 // =====================================================================
 void bumpConfigVersion() {
   configVersion++;
-  configSynced = false;
+  for (int i = 0; i < MAX_NODE_SLOTS; i++) nodeStates[i].configSynced = false;
   Serial.print("[Sync] Config version bumped to "); Serial.println(configVersion);
 }
 
-void pushConfigToNode() {
+bool allNodesSynced() {
+  for (int i = 0; i < hw.nodeCount; i++) {
+    if (!hw.nodes[i].active) continue;
+    NodeState *ns = findNodeByAddress(hw.nodes[i].address);
+    if (ns && !ns->configSynced) return false;
+  }
+  return true;
+}
+
+void pushConfigToNode(NodeInstance &node) {
+  NodeState *ns = findNodeByAddress(node.address);
+
+  // Gather sensors assigned to this node
   uint8_t sensType = 0;
   uint8_t sensPin  = 0xFF;
   uint8_t analogPin = 0xFF;
   for (int i = 0; i < config.sensorCount; i++) {
     SensorInstance &si = config.sensors[i];
     if (!si.active || !si.enabled) continue;
+    if (strcmp(si.nodeId, node.id) != 0) continue;
     if ((si.sensorType == STYPE_DHT11 || si.sensorType == STYPE_DHT22) && sensType == 0) {
       sensType = si.sensorType;
       sensPin  = si.pin;
@@ -256,8 +309,8 @@ void pushConfigToNode() {
     }
   }
 
-  uint16_t telSec = 10;  // default telemetry interval
-  uint16_t fsSec  = 60;  // default fail-safe timeout
+  uint16_t telSec = 10;
+  uint16_t fsSec  = 60;
 
   ConfigPushPayload cfg;
   cfg.configType = CFG_FULL_SYNC;
@@ -272,14 +325,15 @@ void pushConfigToNode() {
   cfg.data[7]    = fsSec & 0xFF;
 
   uint8_t buf[FRAME_MAX];
-  uint8_t len = buildFrame(buf, ADDR_NODE1, ADDR_GATEWAY,
+  uint8_t len = buildFrame(buf, node.address, ADDR_GATEWAY,
                            MSG_CONFIG_PUSH, nextSeq++, &cfg, sizeof(cfg));
   LoRa.beginPacket();
   LoRa.write(buf, len);
   LoRa.endPacket();
 
-  lastConfigPush = millis();
+  if (ns) ns->lastConfigPush = millis();
   Serial.print("[Sync] Pushed config v"); Serial.print(configVersion);
+  Serial.print(" to 0x"); Serial.print(node.address, HEX);
   Serial.print(" dht="); Serial.print(sensType);
   Serial.print("/pin"); Serial.print(sensPin);
   Serial.print(" adc="); Serial.println(analogPin);
@@ -344,24 +398,31 @@ float applyCalibration(float raw, int16_t offsetX10, uint16_t scaleX100) {
 
 void handleState() {
   if (!auth.check(server, ROLE_USER)) return;
-  if (nodeOnline && millis() - lastNodeHeard > NODE_TIMEOUT_MS)
-    nodeOnline = false;
 
+  // Update node timeout status
+  uint32_t now = millis();
+  for (int i = 0; i < hw.nodeCount; i++) {
+    NodeState *ns = findNodeByAddress(hw.nodes[i].address);
+    if (ns && ns->online && now - ns->lastHeard > NODE_TIMEOUT_MS)
+      ns->online = false;
+  }
+
+  NodeState *pn = primaryNode();
   JsonDocument doc;
-  doc["uptime_s"]     = millis() / 1000;
+  doc["uptime_s"]     = now / 1000;
   doc["clients"]      = WiFi.softAPgetStationNum();
-  doc["node_online"]  = nodeOnline;
-  doc["temperature_c"] = serialized(String(nodeTemperature, 1));
-  doc["humidity_pct"]  = serialized(String(nodeHumidity, 1));
-  doc["rssi"]         = LoRa.packetRssi();
+  doc["node_online"]  = anyNodeOnline();
+  doc["temperature_c"] = serialized(String(pn ? pn->temperature : 0.0f, 1));
+  doc["humidity_pct"]  = serialized(String(pn ? pn->humidity : 0.0f, 1));
+  doc["rssi"]         = pn ? pn->rssi : 0;
   doc["protocol_ver"] = PROTOCOL_VERSION;
   doc["configured"]   = config.env.configured;
   doc["commission"]   = (int)config.env.commissionStatus;
   doc["commission_label"] = commissionName(config.env.commissionStatus);
   doc["config_version"] = configVersion;
-  doc["config_synced"]  = configSynced;
-  if (lastTelemetryAt > 0) {
-    doc["reading_age_s"]  = (millis() - lastTelemetryAt) / 1000;
+  doc["config_synced"]  = allNodesSynced();
+  if (pn && pn->lastTelemetryAt > 0) {
+    doc["reading_age_s"]  = (now - pn->lastTelemetryAt) / 1000;
   }
 
   // Build devices array from equipment registry + output states
@@ -403,21 +464,25 @@ void handleState() {
 
   // Configured sensors with live readings, calibration, and quality
   JsonArray sensArr = doc["sensors"].to<JsonArray>();
-  uint32_t telemetryAge = (lastTelemetryAt > 0) ? (millis() - lastTelemetryAt) : UINT32_MAX;
   for (int i = 0; i < config.sensorCount; i++) {
     SensorInstance &si = config.sensors[i];
     if (!si.active || !si.enabled) continue;
+
+    NodeState *sns = findNodeById(si.nodeId);
+    bool sOnline = sns ? sns->online : false;
+    uint32_t sTelAge = (sns && sns->lastTelemetryAt > 0) ? (now - sns->lastTelemetryAt) : UINT32_MAX;
+
     JsonObject so = sensArr.add<JsonObject>();
     so["id"]   = si.id;
     so["name"] = si.name;
     if (si.label[0]) so["label"] = si.label;
     so["type"] = si.sensorType;
-    so["connected"] = nodeOnline;
+    so["connected"] = sOnline;
 
     so["zone_id"] = si.zoneId;
     so["pin"]     = si.pin;
-    if (lastTelemetryAt > 0)
-      so["reading_age_s"] = (int)(telemetryAge / 1000);
+    if (sns && sns->lastTelemetryAt > 0)
+      so["reading_age_s"] = (int)(sTelAge / 1000);
 
     const SensorDriver *drv = nullptr;
     for (int d = 0; d < SENSOR_DRIVER_COUNT; d++) {
@@ -432,25 +497,25 @@ void handleState() {
 
     if (si.sensorType == STYPE_DHT11 || si.sensorType == STYPE_DHT22) {
       JsonObject rd = so["readings"].to<JsonObject>();
-      bool hasReading = nodeOnline && lastTelemetryAt > 0;
-      float calTemp = applyCalibration(nodeTemperature, si.offsetX10, si.scaleX100);
-      MeasureQuality tq = measureQuality(hasReading, telemetryAge, nodeTemperature,
+      bool hasReading = sOnline && sns->lastTelemetryAt > 0;
+      float calTemp = applyCalibration(sns ? sns->temperature : 0.0f, si.offsetX10, si.scaleX100);
+      MeasureQuality tq = measureQuality(hasReading, sTelAge, sns ? sns->temperature : 0.0f,
                             drv ? drv->rangeMinX10 : -400, drv ? drv->rangeMaxX10 : 800);
-      MeasureQuality hq = measureQuality(hasReading, telemetryAge, nodeHumidity, 0, 1000);
+      MeasureQuality hq = measureQuality(hasReading, sTelAge, sns ? sns->humidity : 0.0f, 0, 1000);
       so["quality"] = qualityName(tq < hq ? hq : tq);
       if (hasReading) {
         rd["temperature_c"] = serialized(String(calTemp, 1));
-        rd["humidity_pct"]  = serialized(String(nodeHumidity, 1));
+        rd["humidity_pct"]  = serialized(String(sns->humidity, 1));
       }
     } else if (si.sensorType == STYPE_ANALOG) {
       JsonObject rd = so["readings"].to<JsonObject>();
-      bool hasReading = nodeOnline && nodeAnalogValue >= 0;
-      MeasureQuality aq = measureQuality(hasReading, telemetryAge,
-                            (float)nodeAnalogValue, 0, 10230);
+      bool hasReading = sOnline && sns && sns->analogValue >= 0;
+      MeasureQuality aq = measureQuality(hasReading, sTelAge,
+                            sns ? (float)sns->analogValue : 0.0f, 0, 10230);
       so["quality"] = qualityName(aq);
       if (hasReading) {
-        float calAnalog = applyCalibration(nodeAnalogValue / 10.23f, si.offsetX10, si.scaleX100);
-        rd["analog_raw"] = nodeAnalogValue;
+        float calAnalog = applyCalibration(sns->analogValue / 10.23f, si.offsetX10, si.scaleX100);
+        rd["analog_raw"] = sns->analogValue;
         rd["analog_pct"] = serialized(String(calAnalog, 1));
       }
     }
@@ -1338,9 +1403,14 @@ void handleGetNodes() {
     obj["address"]  = hw.nodes[i].address;
     obj["board"]   = hw.nodes[i].board;
     obj["fw"]      = hw.nodes[i].fwVersion;
-    obj["online"]  = nodeOnline;
+    NodeState *nns = findNodeByAddress(hw.nodes[i].address);
+    obj["online"]  = nns ? nns->online : false;
+    obj["rssi"]    = nns ? nns->rssi : 0;
     obj["relays"]  = config.env.relayCount;
-    obj["sensors"]  = 1;  // DHT11 currently
+    int sCount = 0;
+    for (int s = 0; s < config.sensorCount; s++)
+      if (config.sensors[s].active && strcmp(config.sensors[s].nodeId, hw.nodes[i].id) == 0) sCount++;
+    obj["sensors"]  = sCount;
     obj["free_pins"] = hw.countAvailablePins();
   }
   String json;
@@ -1506,8 +1576,6 @@ void sendOutputCmd(OutputState &o, bool on) {
 
 void evaluateRules() {
   uint32_t now = millis();
-  uint32_t telemetryAge = (lastTelemetryAt > 0) ? (now - lastTelemetryAt) : UINT32_MAX;
-  bool sensorFresh = nodeOnline && telemetryAge < 600000;  // 10 min
 
   for (int i = 0; i < config.ruleCount; i++) {
     AutomationRule &r = config.rules[i];
@@ -1519,6 +1587,11 @@ void evaluateRules() {
 
     // Manual override — skip automation entirely
     if (out.manualOverride) continue;
+
+    // Find the node that owns this equipment's sensors
+    NodeState *rns = findNodeById(eq->nodeId);
+    uint32_t telemetryAge = (rns && rns->lastTelemetryAt > 0) ? (now - rns->lastTelemetryAt) : UINT32_MAX;
+    bool sensorFresh = rns && rns->online && telemetryAge < 600000;
 
     // Fault handling: if sensor data is stale/missing while rule is triggered, force off
     if (!sensorFresh) {
@@ -1543,11 +1616,11 @@ void evaluateRules() {
     }
 
     int16_t valueX10;
-    if (r.sensor == 0)      valueX10 = (int16_t)(nodeTemperature * 10);
-    else if (r.sensor == 1) valueX10 = (int16_t)(nodeHumidity * 10);
+    if (r.sensor == 0)      valueX10 = (int16_t)(rns->temperature * 10);
+    else if (r.sensor == 1) valueX10 = (int16_t)(rns->humidity * 10);
     else if (r.sensor == 2) {
-      if (nodeAnalogValue < 0) continue;
-      valueX10 = (int16_t)(nodeAnalogValue * 1000L / 1023);
+      if (rns->analogValue < 0) continue;
+      valueX10 = (int16_t)(rns->analogValue * 1000L / 1023);
     }
     else continue;
 
@@ -1841,6 +1914,27 @@ void setup() {
   syncRelayLabels();
   syncSensorPins();
   Serial.print("Nodes: "); Serial.println(hw.nodeCount);
+
+  // Initialize per-node runtime state
+  for (int i = 0; i < MAX_NODE_SLOTS; i++) nodeStates[i].reset();
+  for (int i = 0; i < hw.nodeCount; i++) {
+    if (!hw.nodes[i].active) continue;
+    NodeState *ns = findNodeByAddress(hw.nodes[i].address);
+    if (!ns) {
+      // Assign first free slot
+      for (int s = 0; s < MAX_NODE_SLOTS; s++) {
+        if (nodeStates[s].loraAddress == 0) {
+          nodeStates[s].loraAddress = hw.nodes[i].address;
+          ns = &nodeStates[s];
+          break;
+        }
+      }
+    }
+    if (ns) {
+      Serial.print("  Node "); Serial.print(hw.nodes[i].id);
+      Serial.print(" -> 0x"); Serial.println(hw.nodes[i].address, HEX);
+    }
+  }
   Serial.print("Sensors: "); Serial.println(config.sensorCount);
 
   // Auth and event log
@@ -1937,25 +2031,39 @@ void loop() {
     lastKeepalive = millis();
   }
 
-  if (nodeOnline && millis() - lastAutomation >= AUTOMATION_INTERVAL_MS) {
+  // Update node timeout status
+  for (int i = 0; i < hw.nodeCount; i++) {
+    NodeState *ns = findNodeByAddress(hw.nodes[i].address);
+    if (ns && ns->online && millis() - ns->lastHeard > NODE_TIMEOUT_MS)
+      ns->online = false;
+  }
+
+  if (anyNodeOnline() && millis() - lastAutomation >= AUTOMATION_INTERVAL_MS) {
     evaluateRules();
     lastAutomation = millis();
   }
 
-  // Config sync: push config to node until ACK received
-  if (!configSynced && millis() > CONFIG_PUSH_INITIAL_DELAY_MS &&
-      millis() - lastConfigPush >= CONFIG_PUSH_INTERVAL_MS) {
-    pushConfigToNode();
+  // Config sync: push config to each unsynced node
+  if (!allNodesSynced() && millis() > CONFIG_PUSH_INITIAL_DELAY_MS) {
+    for (int i = 0; i < hw.nodeCount; i++) {
+      if (!hw.nodes[i].active) continue;
+      NodeState *ns = findNodeByAddress(hw.nodes[i].address);
+      if (ns && !ns->configSynced &&
+          millis() - ns->lastConfigPush >= CONFIG_PUSH_INTERVAL_MS) {
+        pushConfigToNode(hw.nodes[i]);
+      }
+    }
   }
 
   // Sensor history: first sample on first telemetry, then every 5 min
-  if (nodeOnline) {
+  NodeState *pn = primaryNode();
+  if (pn && pn->online) {
     if (!firstSampleTaken) {
-      history.push(millis() / 1000, nodeTemperature, nodeHumidity);
+      history.push(millis() / 1000, pn->temperature, pn->humidity);
       lastHistorySample = millis();
       firstSampleTaken = true;
     } else if (millis() - lastHistorySample >= HISTORY_INTERVAL_MS) {
-      history.push(millis() / 1000, nodeTemperature, nodeHumidity);
+      history.push(millis() / 1000, pn->temperature, pn->humidity);
       lastHistorySample = millis();
     }
   }

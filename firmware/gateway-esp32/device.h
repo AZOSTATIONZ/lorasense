@@ -8,6 +8,39 @@
 
 enum CmdStatus { CMD_IDLE, CMD_PENDING, CMD_SENT, CMD_CONFIRMED, CMD_FAILED };
 
+// Per-node runtime state — tracks telemetry and connectivity for each registered node
+const int MAX_NODE_SLOTS = 4;
+
+struct NodeState {
+  bool     online;
+  uint32_t lastHeard;        // millis() of last valid frame from this node
+  float    temperature;
+  float    humidity;
+  int16_t  analogValue;      // raw ADC, -1 = no sensor
+  uint8_t  analogPin;        // 0xFF = none
+  uint32_t lastTelemetryAt;  // millis() when last telemetry was received
+  uint8_t  loraAddress;      // LoRa address of this node
+  uint8_t  configVersion;    // last config version ACKed by this node
+  bool     configSynced;
+  uint32_t lastConfigPush;
+  int8_t   rssi;             // last received RSSI
+
+  void reset() {
+    online = false;
+    lastHeard = 0;
+    temperature = 0;
+    humidity = 0;
+    analogValue = -1;
+    analogPin = 0xFF;
+    lastTelemetryAt = 0;
+    loraAddress = 0;
+    configVersion = 0xFF;
+    configSynced = false;
+    lastConfigPush = 0;
+    rssi = 0;
+  }
+};
+
 inline const char *statusName(CmdStatus s) {
   switch (s) {
     case CMD_PENDING:   return "PENDING";

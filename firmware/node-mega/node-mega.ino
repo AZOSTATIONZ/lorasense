@@ -58,6 +58,9 @@ bool  sensorOk  = false;
 uint8_t configAnalogPin = 0xFF;  // 0xFF = no analog sensor
 uint8_t configVersion = 0xFF;    // 0xFF = no config received yet
 
+// --- Node identity (change for each node: ADDR_NODE1=0x02, ADDR_NODE2=0x03, etc.) ---
+const uint8_t MY_ADDRESS = ADDR_NODE1;
+
 void initDht(uint8_t pin) {
   if (dhtSensor) delete dhtSensor;
   configDhtPin = pin;
@@ -138,7 +141,7 @@ void sendAck(uint8_t seq, uint8_t deviceIdx, bool actualOn, bool ok) {
   ack.ok          = ok ? 1 : 0;
 
   uint8_t buf[FRAME_MAX];
-  uint8_t len = buildFrame(buf, ADDR_GATEWAY, ADDR_NODE1,
+  uint8_t len = buildFrame(buf, ADDR_GATEWAY, MY_ADDRESS,
                            MSG_ACK, seq, &ack, sizeof(ack));
   loRaSend(buf, len);
 
@@ -183,7 +186,7 @@ void sendTelemetry() {
   }
 
   uint8_t buf[FRAME_MAX];
-  uint8_t len = buildFrame(buf, ADDR_GATEWAY, ADDR_NODE1,
+  uint8_t len = buildFrame(buf, ADDR_GATEWAY, MY_ADDRESS,
                            MSG_TELEMETRY, 0, &t, sizeof(t));
   loRaSend(buf, len);
   Serial.println("[LoRa] TX telemetry");
@@ -194,7 +197,7 @@ void sendTelemetry() {
 // =====================================================================
 void sendHeartbeat() {
   uint8_t buf[FRAME_MAX];
-  uint8_t len = buildFrame(buf, ADDR_GATEWAY, ADDR_NODE1,
+  uint8_t len = buildFrame(buf, ADDR_GATEWAY, MY_ADDRESS,
                            MSG_HEARTBEAT, 0, nullptr, 0);
   loRaSend(buf, len);
   Serial.println("[LoRa] TX heartbeat");
@@ -262,7 +265,7 @@ void handleIncoming(const uint8_t *buf, uint8_t len) {
       ack.configType = CFG_FULL_SYNC;
       ack.version    = ver;
       uint8_t ackBuf[FRAME_MAX];
-      uint8_t ackLen = buildFrame(ackBuf, ADDR_GATEWAY, ADDR_NODE1,
+      uint8_t ackLen = buildFrame(ackBuf, ADDR_GATEWAY, MY_ADDRESS,
                                   MSG_CONFIG_ACK, hdr->seq, &ack, sizeof(ack));
       loRaSend(ackBuf, ackLen);
       Serial.print("[Config] ACK sent for v"); Serial.println(ver);
@@ -334,7 +337,7 @@ void loop() {
 
     if (validateFrame(buf, n)) {
       FrameHeader *hdr = (FrameHeader *)buf;
-      if (hdr->dst == ADDR_NODE1 || hdr->dst == ADDR_BROADCAST) {
+      if (hdr->dst == MY_ADDRESS || hdr->dst == ADDR_BROADCAST) {
         handleIncoming(buf, n);
       }
     } else {
