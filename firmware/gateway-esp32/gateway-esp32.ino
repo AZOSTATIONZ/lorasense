@@ -376,19 +376,24 @@ void processPendingCommands() {
     OutputState &o = outputs[i];
 
     if (o.status == CMD_PENDING) {
-      o.attempt = 0;
+      if (o.retryAfter > 0 && millis() < o.retryAfter) continue;
+      if (o.retryAfter == 0) o.attempt = 0;  // fresh command, not a retry
+      o.retryAfter = 0;
       sendCommand(i);
       return;
     }
 
     if (o.status == CMD_SENT) {
       if (millis() - o.sentAt < ACK_TIMEOUT_MS) return;
-      // Timed out — retry or fail
+      // Timed out — retry with exponential backoff, or fail
       o.attempt++;
       if (o.attempt < MAX_RETRIES) {
+        uint32_t backoff = RETRY_DELAY_MS * (1 << o.attempt);  // 400ms, 800ms
+        o.retryAfter = millis() + backoff;
         Serial.print("[LoRa] timeout output="); Serial.print(i);
-        Serial.print(", retry "); Serial.println(o.attempt + 1);
-        sendCommand(i);
+        Serial.print(", retry "); Serial.print(o.attempt + 1);
+        Serial.print(" in "); Serial.print(backoff); Serial.println("ms");
+        o.status = CMD_PENDING;  // re-queue for retry after backoff
       } else {
         o.status = CMD_FAILED;
         Serial.print("[LoRa] FAILED output="); Serial.println(i);
@@ -615,9 +620,20 @@ void handleSetDevice() {
     return;
   }
 
+  // Interlock check: prevent conflicting equipment from running simultaneously
+  if (state == "on") {
+    const char *conflict = interlockConflict(eq->outputIndex);
+    if (conflict) {
+      String msg = "{\"error\":\"interlock: " + String(conflict) + " is active\"}";
+      server.send(409, "application/json", msg);
+      return;
+    }
+  }
+
   outputs[eq->outputIndex].requestedOn = (state == "on");
   outputs[eq->outputIndex].status      = CMD_PENDING;
   outputs[eq->outputIndex].sentAt      = millis();
+  outputs[eq->outputIndex].retryAfter  = 0;
   outputs[eq->outputIndex].seq         = nextSeq++;
   outputs[eq->outputIndex].attempt     = 0;
 
@@ -825,6 +841,7 @@ void handleAddEquipment() {
   const char *zone   = doc["zone_id"] | "";
   const char *nodeId = doc["node_id"] | "mega-001";
   uint8_t output     = doc["output"] | 0xFF;
+  uint8_t interlock  = doc["interlock"] | 0;
 
   if (!id[0] || !name[0]) {
     server.send(400, "application/json", "{\"error\":\"need id and name\"}");
@@ -845,7 +862,7 @@ void handleAddEquipment() {
     server.send(400, "application/json", "{\"error\":\"controller node not found\"}");
     return;
   }
-  if (!config.addEquipment(id, name, cat, zone, nodeId, output)) {
+  if (!config.addEquipment(id, name, cat, zone, nodeId, output, interlock)) {
     server.send(409, "application/json", "{\"error\":\"equipment exists or limit reached\"}");
     return;
   }
@@ -870,6 +887,7 @@ void handleUpdateEquipment() {
   const char *zone   = doc["zone_id"] | "";
   const char *nodeId = doc["node_id"] | "";
   uint8_t output     = doc["output"] | 0xFF;
+  uint8_t interlock  = doc["interlock"] | 0;
 
   if (!id[0]) {
     server.send(400, "application/json", "{\"error\":\"need id\"}");
@@ -886,7 +904,7 @@ void handleUpdateEquipment() {
     server.send(409, "application/json", msg);
     return;
   }
-  if (!config.updateEquipment(id, name, cat, zone, nodeId, output)) {
+  if (!config.updateEquipment(id, name, cat, zone, nodeId, output, interlock)) {
     server.send(404, "application/json", "{\"error\":\"not found\"}");
     return;
   }
@@ -1667,11 +1685,28 @@ void handleDeleteNode() {
 const uint32_t AUTOMATION_INTERVAL_MS = 5000;
 uint32_t lastAutomation = 0;
 
+// Check whether turning on this output would violate an interlock group.
+// Returns the name of the conflicting equipment, or nullptr if clear.
+const char *interlockConflict(uint8_t outputIndex) {
+  Equipment *eq = config.findByOutput(outputIndex);
+  if (!eq || eq->interlockGroup == 0) return nullptr;
+  for (int i = 0; i < config.equipmentCount; i++) {
+    Equipment &other = config.equipment[i];
+    if (!other.active) continue;
+    if (&other == eq) continue;
+    if (other.interlockGroup != eq->interlockGroup) continue;
+    if (other.outputIndex < MAX_OUTPUTS && outputs[other.outputIndex].confirmedOn)
+      return other.name;
+  }
+  return nullptr;
+}
+
 void sendOutputCmd(OutputState &o, bool on) {
   if (o.status == CMD_PENDING || o.status == CMD_SENT) return;
   o.requestedOn = on;
   o.status      = CMD_PENDING;
   o.sentAt      = millis();
+  o.retryAfter  = 0;
   o.seq         = nextSeq++;
   o.attempt     = 0;
 }
@@ -1707,6 +1742,11 @@ void evaluateRules() {
       bool shouldBeOn = dayMatch && inWindow;
 
       if (shouldBeOn && !r.triggered) {
+        const char *ilk = interlockConflict(eq->outputIndex);
+        if (ilk) {
+          actionLog.add(r.name, "INTERLOCK", eq->name, nowMin);
+          continue;
+        }
         r.triggered = true;
         r.lastActionAt = now;
         sendOutputCmd(out, true);
@@ -1785,6 +1825,11 @@ void evaluateRules() {
       if (r.cooldownS > 0 && r.lastActionAt > 0 &&
           (now - r.lastActionAt) < (uint32_t)r.cooldownS * 1000) {
         continue;  // still in cooldown
+      }
+      const char *ilk = interlockConflict(eq->outputIndex);
+      if (ilk) {
+        actionLog.add(r.name, "INTERLOCK", eq->name, valueX10);
+        continue;
       }
       r.triggered = true;
       r.exceedSince = 0;

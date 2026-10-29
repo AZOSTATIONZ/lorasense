@@ -1200,8 +1200,14 @@ function setDevice(id, state) {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body
-  }).then(function() {
-    showToast(devName + ' turned ' + state, 'success');
+  }).then(function(res) {
+    if (res.ok) {
+      showToast(devName + ' turned ' + state, 'success');
+    } else {
+      return res.json().then(function(j) {
+        showToast(j.error || ('Failed to switch ' + devName), 'error');
+      });
+    }
     refresh();
   }).catch(function() {
     showToast('Failed to switch ' + devName, 'error');
@@ -1542,7 +1548,8 @@ document.getElementById('add-eq-btn').onclick = function() {
     category: document.getElementById('eq-category').value,
     zone_id: document.getElementById('eq-zone').value,
     node_id: 'mega-001',
-    output: parseInt(document.getElementById('eq-output').value)
+    output: parseInt(document.getElementById('eq-output').value),
+    interlock: parseInt(document.getElementById('eq-interlock').value) || 0
   };
   if (data.output === 255) delete data.output;
   fetch('/api/config/equipment', {

@@ -59,6 +59,7 @@ struct OutputState {
   bool      requestedOn;
   CmdStatus status;
   uint32_t  sentAt;
+  uint32_t  retryAfter;     // millis() when next retry is allowed (exponential backoff)
   uint8_t   seq;
   uint8_t   attempt;
   bool      manualOverride;  // when true, automation rules skip this output

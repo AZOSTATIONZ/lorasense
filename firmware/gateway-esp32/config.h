@@ -47,6 +47,7 @@ struct Equipment {
   char    nodeId[ID_LEN];  // controller node this equipment belongs to
   uint8_t outputIndex;     // relay channel 0-3 (or 0xFF = unassigned)
   bool    active;          // whether this record is in use
+  uint8_t interlockGroup;  // 0 = none; 1-8 = mutual exclusion group
 };
 
 // Measurement quality — how trustworthy is the current reading?
@@ -246,6 +247,7 @@ public:
       strlcpy(eq.zoneId, obj["zone_id"] | "", ID_LEN);
       strlcpy(eq.nodeId, obj["node_id"] | "mega-001", ID_LEN);
       eq.outputIndex = obj["output"] | 0xFF;
+      eq.interlockGroup = obj["interlock"] | 0;
       eq.active = true;
       equipmentCount++;
     }
@@ -269,6 +271,7 @@ public:
       obj["zone_id"] = eq.zoneId;
       obj["node_id"] = eq.nodeId;
       if (eq.outputIndex != 0xFF) obj["output"] = eq.outputIndex;
+      if (eq.interlockGroup) obj["interlock"] = eq.interlockGroup;
     }
     serializeJson(doc, f);
     f.close();
@@ -301,7 +304,8 @@ public:
   }
 
   bool addEquipment(const char *id, const char *name, const char *category,
-                    const char *zoneId, const char *nodeId, uint8_t output) {
+                    const char *zoneId, const char *nodeId, uint8_t output,
+                    uint8_t interlock = 0) {
     if (equipmentCount >= MAX_EQUIPMENT) return false;
     if (findEquipment(id)) return false;
     if (output != 0xFF && isOutputTaken(output)) return false;
@@ -313,13 +317,15 @@ public:
     strlcpy(eq.zoneId, zoneId, ID_LEN);
     strlcpy(eq.nodeId, nodeId, ID_LEN);
     eq.outputIndex = output;
+    eq.interlockGroup = interlock;
     eq.active = true;
     equipmentCount++;
     return saveEquipment();
   }
 
   bool updateEquipment(const char *id, const char *name, const char *category,
-                       const char *zoneId, const char *nodeId, uint8_t output) {
+                       const char *zoneId, const char *nodeId, uint8_t output,
+                       uint8_t interlock = 0) {
     Equipment *eq = findEquipment(id);
     if (!eq) return false;
     if (output != 0xFF && isOutputTaken(output, id)) return false;
@@ -329,6 +335,7 @@ public:
     strlcpy(eq->zoneId, zoneId, ID_LEN);
     if (nodeId[0])   strlcpy(eq->nodeId, nodeId, ID_LEN);
     eq->outputIndex = output;
+    eq->interlockGroup = interlock;
     return saveEquipment();
   }
 
