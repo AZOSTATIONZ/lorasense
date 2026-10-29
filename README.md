@@ -8,7 +8,8 @@ Built for farms, greenhouses, industrial facilities, and labs where reliable mon
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-ESP32%20%2B%20Arduino%20Mega-brightgreen.svg)
-![Phase](https://img.shields.io/badge/development-Phase%2025%20%2F%2025-success.svg)
+![Phase](https://img.shields.io/badge/development-Phase%2038%20%2F%2038-success.svg)
+![Version](https://img.shields.io/badge/firmware-v3.1.0-blue.svg)
 ![Tests](https://img.shields.io/badge/tests-1%2C300%2B%20passing-success.svg)
 
 ---
@@ -37,6 +38,12 @@ Built for farms, greenhouses, industrial facilities, and labs where reliable mon
 - **CSV export** — Download sensor history for analysis
 - **Accessible** — Keyboard navigation, ARIA labels, screen reader support
 - **In-app documentation** — 8-section help page with wiring guides, FAQ, and sensor catalogue
+- **Relay interlocks** — Mutually exclusive equipment groups prevent conflicting outputs
+- **Config validation** — Bounds-checked on every load, auto-corrected and logged
+- **API security** — Request body limits, auth rate limiting, security headers, factory reset
+- **History persistence** — Binary ring buffer saved to flash, restored on reboot
+- **Config migration** — Versioned schema with forward-compatible upgrade path
+- **Multi-node** — Up to 4 sensor nodes with distinct LoRa addresses
 
 ## Architecture
 
@@ -291,19 +298,19 @@ Tests verify HTML structure, CSS styles, JavaScript logic, and protocol encoding
 
 | Metric | Value |
 |---|---|
-| Gateway flash usage | 1,074,576 / 1,310,720 bytes (81%) |
-| Gateway RAM usage | 56,224 / 327,680 bytes (17%) |
+| Gateway flash usage | ~1,085,360 / 1,310,720 bytes (82%) |
+| Gateway RAM usage | ~57,400 / 327,680 bytes (17%) |
 | LittleFS image | ~50 KB compressed |
 | Web dashboard | 1 HTML + 1 CSS + 1 JS (no frameworks) |
 | External dependencies | 0 (no CDN, no npm, no build tools) |
-| Total commits | 46 across 25 development phases |
+| Total commits | 51+ across 38 development phases |
 
 ## Design Decisions
 
 | Decision | Rationale |
 |---|---|
 | **No framework (vanilla JS)** | Fits in ESP32 flash, loads instantly, no build tooling |
-| **Single-node architecture** | Simplicity first; multi-node deferred until single-node is solid |
+| **Multi-node over LoRa** | Up to 4 nodes with distinct addresses, extensible to 8 |
 | **LoRa at 433 MHz** | License-free ISM band, long range, low power |
 | **HTTP Digest Auth** | Secure without HTTPS (no TLS certificate needed on a local AP) |
 | **LittleFS over SPIFFS** | Better wear leveling, directory support, actively maintained |
@@ -324,7 +331,7 @@ Tests verify HTML structure, CSS styles, JavaScript logic, and protocol encoding
 
 ## Limitations
 
-- **Single node** — Current firmware supports one sensor node per gateway (multi-node is architecturally planned but not implemented)
+- **Multi-node** — Supports up to 4 sensor nodes per gateway (architecturally extensible to 8)
 - **No internet telemetry** — Data stays local; no remote monitoring unless you add an uplink
 - **Limited flash** — ESP32 has ~1.3 MB for firmware and ~1.4 MB for the filesystem; the dashboard is already at 81% flash
 - **Manual sensor drivers** — Adding a new sensor type requires C++ firmware changes and reflashing
@@ -333,11 +340,19 @@ Tests verify HTML structure, CSS styles, JavaScript logic, and protocol encoding
 
 ## Roadmap
 
-- [ ] Multi-node support (up to 8 nodes per gateway)
+- [x] Multi-node support (up to 4 nodes per gateway)
+- [x] Relay interlocks — mutually exclusive equipment groups
+- [x] Duplicate frame detection — sequence-based dedup at gateway
+- [x] Config validation — auto-correction on load
+- [x] API rate limiting — lockout after failed auth attempts
+- [x] Factory reset — technician-only full wipe via dashboard
+- [x] History persistence — binary flash storage across reboots
+- [x] Analog data in history — chart trace with independent axis
+- [x] Config migration framework — versioned schema upgrades
+- [x] Tablet-responsive layout — 2-column grid at 768px+
 - [ ] OTA firmware updates via the dashboard
 - [ ] MQTT bridge for optional cloud connectivity
 - [ ] Battery monitoring and low-power sleep mode
-- [ ] Sensor calibration UI
 - [ ] Data logging to SD card
 - [ ] Alert notifications via buzzer or LED
 

@@ -1279,3 +1279,11 @@ details[open] > .docs-heading::before { transform: rotate(90deg); }
 .clock-status { padding: 6px 10px; border-radius: 6px; font-size: 13px; margin-bottom: 8px; }
 .clock-ok { background: rgba(22,163,74,0.1); color: var(--on); }
 .clock-warn { background: rgba(217,119,6,0.1); color: var(--pending); }
+
+/* === Phase 38: Tablet breakpoint === */
+@media (min-width: 768px) {
+  #equipment-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .node-health-grid { grid-template-columns: 1fr 1fr; }
+  #chart-canvas { height: 220px; }
+  .settings-section { max-width: 640px; }
+}

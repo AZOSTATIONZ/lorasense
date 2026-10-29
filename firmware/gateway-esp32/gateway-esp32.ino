@@ -2082,7 +2082,7 @@ void handleSetAuth() {
 void handleSystemInfo() {
   if (!auth.check(server, ROLE_USER)) return;
   JsonDocument doc;
-  doc["firmware"]     = "3.0.0";
+  doc["firmware"]     = "3.1.0";
   doc["uptime_s"]     = millis() / 1000;
   doc["flash_used"]   = LittleFS.usedBytes();
   doc["flash_total"]  = LittleFS.totalBytes();
@@ -2138,7 +2138,7 @@ void setup() {
   Serial.begin(115200);
   delay(500);
   Serial.println();
-  Serial.println("=== LoRaSense Gateway v3.0.0 ===");
+  Serial.println("=== LoRaSense Gateway v3.1.0 ===");
   Serial.print("Free heap: "); Serial.print(ESP.getFreeHeap()); Serial.println(" bytes");
 
   // Init output states
