@@ -4,7 +4,7 @@
 #include <ArduinoJson.h>
 
 // Config schema version — bump when the JSON format changes
-const uint8_t CONFIG_SCHEMA_VERSION = 1;
+const uint8_t CONFIG_SCHEMA_VERSION = 2;
 
 // Maximum limits for the config system
 const int MAX_EQUIPMENT = 8;
@@ -191,6 +191,44 @@ public:
       saveRules();
     }
     return !corrected;
+  }
+
+  bool migrateConfig() {
+    bool migrated = false;
+    const char *files[] = {
+      "/config/env.json", "/config/zones.json", "/config/equipment.json",
+      "/config/sensors.json", "/config/rules.json"
+    };
+    for (int i = 0; i < 5; i++) {
+      if (!LittleFS.exists(files[i])) continue;
+      File f = LittleFS.open(files[i], "r");
+      if (!f) continue;
+      JsonDocument doc;
+      if (deserializeJson(doc, f) != DeserializationError::Ok) { f.close(); continue; }
+      f.close();
+      int fileVer = doc["_v"] | 0;
+      if (fileVer >= CONFIG_SCHEMA_VERSION) continue;
+
+      // v0/v1 → v2: add interlockGroup default to equipment entries
+      if (fileVer < 2 && strcmp(files[i], "/config/equipment.json") == 0) {
+        JsonArray arr = doc["items"].as<JsonArray>();
+        if (arr) {
+          for (JsonObject eq : arr) {
+            if (!eq.containsKey("interlock")) eq["interlock"] = 0;
+          }
+        }
+      }
+
+      doc["_v"] = CONFIG_SCHEMA_VERSION;
+      File wf = LittleFS.open(files[i], "w");
+      if (wf) { serializeJson(doc, wf); wf.close(); migrated = true; }
+    }
+    if (migrated) {
+      loadEquipment();
+      loadSensors();
+      loadRules();
+    }
+    return migrated;
   }
 
   // --- Environment ---

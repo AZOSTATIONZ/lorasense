@@ -2007,6 +2007,7 @@ void handleConfigRestore() {
   }
 
   eventLog.add("config", "Config restored from backup");
+  config.migrateConfig();
 
   String resp = "{\"ok\":true,\"restored\":";
   resp += restored;
@@ -2163,6 +2164,10 @@ void setup() {
   if (!config.validateConfig()) {
     Serial.println("[Config] Corrected out-of-range values");
     eventLog.add("config", "Config validated: out-of-range values corrected");
+  }
+  if (config.migrateConfig()) {
+    Serial.println("[Config] Migrated config to schema v" + String(CONFIG_SCHEMA_VERSION));
+    eventLog.add("config", "Config migrated to schema v2");
   }
   if (!config.env.configured) {
     Serial.println("First boot: waiting for onboarding wizard...");
