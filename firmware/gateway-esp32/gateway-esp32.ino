@@ -1985,7 +1985,7 @@ void handleSetAuth() {
 void handleSystemInfo() {
   if (!auth.check(server, ROLE_USER)) return;
   JsonDocument doc;
-  doc["firmware"]     = "2.9.0";
+  doc["firmware"]     = "3.0.0";
   doc["uptime_s"]     = millis() / 1000;
   doc["flash_used"]   = LittleFS.usedBytes();
   doc["flash_total"]  = LittleFS.totalBytes();
@@ -1996,6 +1996,10 @@ void handleSystemInfo() {
   doc["equipment"]    = config.equipmentCount;
   doc["rules"]        = config.ruleCount;
   doc["zones"]        = config.zoneCount;
+  doc["nodes"]        = hw.nodeCount;
+  doc["wifi_clients"] = WiFi.softAPgetStationNum();
+  doc["clock_valid"]  = clockValid;
+  doc["lora_addr"]    = ADDR_GATEWAY;
   String json;
   serializeJson(doc, json);
   server.send(200, "application/json", json);

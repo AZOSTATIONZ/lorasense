@@ -991,6 +991,25 @@ function updateDataCount() {
   }
 }
 
+function downloadCsv(csvText, prefix) {
+  var blob = new Blob([csvText], { type: 'text/csv;charset=utf-8' });
+  var url = URL.createObjectURL(blob);
+  var envName = 'LoRaSense';
+  var nameEl = document.getElementById('env-name');
+  if (nameEl && nameEl.textContent) envName = nameEl.textContent.replace(/[^a-zA-Z0-9_-]/g, '_');
+  var now = new Date();
+  var dateStr = now.getFullYear() +
+    ('0' + (now.getMonth()+1)).slice(-2) +
+    ('0' + now.getDate()).slice(-2);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = envName + '_' + prefix + '_' + dateStr + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function exportCsv() {
   if (!chartData || chartData.length === 0) return;
   var envName = 'LoRaSense';
@@ -1254,6 +1273,7 @@ function refresh() {
       document.getElementById('banner').style.display = 'none';
       hideReconnectOverlay();
       if (wasDisconnected) showToast('Connection restored', 'success');
+      diffAndNotify(lastState, s);
       lastState = s;
       if (s.env_name) {
         document.getElementById('env-name').textContent = s.env_name;
@@ -1821,6 +1841,18 @@ function loadActionLog() {
     });
 }
 document.getElementById('load-action-log-btn').onclick = loadActionLog;
+
+document.getElementById('export-action-log-btn').onclick = function() {
+  fetch('/api/action-log').then(function(r) { return r.json(); }).then(function(entries) {
+    if (!entries || entries.length === 0) return;
+    var rows = ['uptime_s,rule,action,equipment,value'];
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      rows.push(e.ts + ',"' + e.rule + '","' + e.action + '","' + e.equipment + '",' + e.value);
+    }
+    downloadCsv(rows.join('\n'), 'action_log');
+  });
+};
 
 // =====================================================================
 //  Onboarding Wizard
@@ -2611,6 +2643,17 @@ document.getElementById('clear-events-btn').onclick = function() {
 };
 document.getElementById('event-filter').onchange = loadEvents;
 
+document.getElementById('export-event-log-btn').onclick = function() {
+  fetch('/api/events?limit=100').then(function(r) { return r.json(); }).then(function(data) {
+    if (!data.events || data.events.length === 0) return;
+    var rows = ['uptime_s,category,message'];
+    data.events.forEach(function(e) {
+      rows.push(e.t + ',"' + e.cat + '","' + e.msg.replace(/"/g, '""') + '"');
+    });
+    downloadCsv(rows.join('\n'), 'event_log');
+  });
+};
+
 // =====================================================================
 //  Phase 9: System info
 // =====================================================================
@@ -2628,6 +2671,9 @@ function loadSystemInfo() {
     html += '<div class="sys-item"><div class="sys-label">Sensors</div><div class="sys-value">' + d.sensors + '</div></div>';
     html += '<div class="sys-item"><div class="sys-label">Equipment</div><div class="sys-value">' + d.equipment + '</div></div>';
     html += '<div class="sys-item"><div class="sys-label">Rules</div><div class="sys-value">' + d.rules + '</div></div>';
+    html += '<div class="sys-item"><div class="sys-label">Nodes</div><div class="sys-value">' + (d.nodes || 0) + '</div></div>';
+    html += '<div class="sys-item"><div class="sys-label">WiFi Clients</div><div class="sys-value">' + (d.wifi_clients || 0) + '</div></div>';
+    html += '<div class="sys-item"><div class="sys-label">Clock</div><div class="sys-value">' + (d.clock_valid ? 'Set' : 'Not set') + '</div></div>';
     html += '<div class="sys-item"><div class="sys-label">Auth</div><div class="sys-value">' + (d.auth_enabled ? 'On' : 'Off') + '</div></div>';
     html += '</div>';
     document.getElementById('system-info').innerHTML = html;
@@ -2895,6 +2941,69 @@ var TOAST_ICONS = {
   warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
   info:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
 };
+
+// =====================================================================
+//  State-diff alert toasts
+// =====================================================================
+function diffAndNotify(prev, next) {
+  if (!prev) return;
+
+  // Diff rules: triggered, fault, enabled changes
+  var prevRules = {};
+  if (prev.rules) {
+    for (var i = 0; i < prev.rules.length; i++) {
+      prevRules[prev.rules[i].name] = prev.rules[i];
+    }
+  }
+  if (next.rules) {
+    for (var i = 0; i < next.rules.length; i++) {
+      var r = next.rules[i];
+      var pr = prevRules[r.name];
+      if (!pr) continue;
+      // Rule triggered
+      if (r.triggered && !pr.triggered) {
+        var eqName = r.equipment;
+        if (next.devices) {
+          for (var j = 0; j < next.devices.length; j++) {
+            if (next.devices[j].id === r.equipment) { eqName = next.devices[j].name; break; }
+          }
+        }
+        var icon = r.rule_type === 1 ? 'Schedule' : 'Rule';
+        showToast(icon + ' "' + r.name + '" activated → ' + eqName + ' ON', 'warning');
+      }
+      // Rule released
+      if (!r.triggered && pr.triggered) {
+        showToast('Rule "' + r.name + '" released', 'info');
+      }
+      // Fault appeared
+      if (r.fault && !pr.fault) {
+        showToast('FAULT: "' + r.name + '" — sensor data lost, equipment OFF', 'error');
+      }
+      // Fault cleared
+      if (!r.fault && pr.fault) {
+        showToast('Fault cleared: "' + r.name + '"', 'success');
+      }
+    }
+  }
+
+  // Diff node online status
+  if (prev.node_online !== undefined && next.node_online !== undefined) {
+    if (!next.node_online && prev.node_online) {
+      showToast('Node offline — no LoRa telemetry', 'error');
+    } else if (next.node_online && !prev.node_online) {
+      showToast('Node back online', 'success');
+    }
+  }
+
+  // Clock set/lost
+  if (prev.clock_valid !== undefined && next.clock_valid !== undefined) {
+    if (next.clock_valid && !prev.clock_valid) {
+      showToast('Gateway clock set — schedule rules active', 'success');
+    } else if (!next.clock_valid && prev.clock_valid) {
+      showToast('Gateway clock lost — schedule rules paused', 'warning');
+    }
+  }
+}
 
 function showToast(message, type) {
   type = type || 'info';
