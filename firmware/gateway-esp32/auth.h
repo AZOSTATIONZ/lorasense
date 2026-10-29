@@ -30,8 +30,10 @@ struct AuthManager {
   AuthCredential credentials[MAX_CREDENTIALS];
   int count;
   bool enabled;
+  uint8_t failedAttempts;
+  uint32_t lockoutUntil;
 
-  AuthManager() : count(0), enabled(false) {}
+  AuthManager() : count(0), enabled(false), failedAttempts(0), lockoutUntil(0) {}
 
   void begin() {
     if (!LittleFS.exists(AUTH_FILE)) {
@@ -112,12 +114,22 @@ struct AuthManager {
     if (!enabled) return true;
     if (count == 0) return true;
 
+    // Rate limiting: 5 failures → 60s lockout
+    if (failedAttempts >= 5 && millis() < lockoutUntil) {
+      server.send(429, "application/json", "{\"error\":\"too many attempts, try again later\"}");
+      return false;
+    }
+    if (failedAttempts >= 5 && millis() >= lockoutUntil) {
+      failedAttempts = 0;
+    }
+
     // Try each credential
     for (int i = 0; i < count; i++) {
       AuthCredential &c = credentials[i];
       if (!c.active) continue;
       if (c.role < required) continue;
       if (server.authenticate(c.username, c.password)) {
+        failedAttempts = 0;
         return true;
       }
     }
@@ -128,11 +140,16 @@ struct AuthManager {
       if (!c.active) continue;
       if (c.role >= required) continue;
       if (server.authenticate(c.username, c.password)) {
+        failedAttempts = 0;
         server.send(403, "application/json", "{\"error\":\"insufficient permissions\"}");
         return false;
       }
     }
 
+    failedAttempts++;
+    if (failedAttempts >= 5) {
+      lockoutUntil = millis() + 60000;
+    }
     server.requestAuthentication(DIGEST_AUTH, AUTH_REALM, "Authentication required");
     return false;
   }

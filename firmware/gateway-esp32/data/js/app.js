@@ -2685,9 +2685,10 @@ function loadSystemInfo() {
     html += '</div>';
     document.getElementById('system-info').innerHTML = html;
 
-    // Show auth section for technicians (role 2) or when auth is off
+    // Show auth + factory reset sections for technicians (role 2) or when auth is off
     if (d.my_role >= 2 || !d.auth_enabled) {
       document.getElementById('auth-section').style.display = '';
+      document.getElementById('factory-reset-section').style.display = '';
       loadAuth();
     }
   });
@@ -2736,6 +2737,24 @@ document.getElementById('restore-file').onchange = function(ev) {
   };
   reader.readAsText(file);
   ev.target.value = '';
+};
+
+// =====================================================================
+//  Phase 35: Factory Reset
+// =====================================================================
+document.getElementById('factory-reset-btn').onclick = function() {
+  if (!confirm('WARNING: This will erase ALL configuration, credentials, and logs. The gateway will reboot to defaults.\n\nAre you sure?')) return;
+  if (!confirm('Final confirmation: Factory reset cannot be undone. Proceed?')) return;
+  document.getElementById('factory-reset-status').textContent = 'Resetting...';
+  fetch('/api/factory-reset', { method: 'POST' }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.ok) {
+      document.getElementById('factory-reset-status').textContent = 'Factory reset complete. Rebooting...';
+    } else {
+      document.getElementById('factory-reset-status').textContent = 'Error: ' + (d.error || 'reset failed');
+    }
+  }).catch(function() {
+    document.getElementById('factory-reset-status').textContent = 'Gateway is rebooting...';
+  });
 };
 
 // =====================================================================

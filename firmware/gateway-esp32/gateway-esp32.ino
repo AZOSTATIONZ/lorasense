@@ -446,6 +446,7 @@ float applyCalibration(float raw, int16_t offsetX10, uint16_t scaleX100) {
 
 void handleState() {
   if (!auth.check(server, ROLE_USER)) return;
+  addSecHeaders();
 
   // Update node timeout status
   uint32_t now = millis();
@@ -604,6 +605,22 @@ void handleState() {
 }
 
 // =====================================================================
+//  Helpers: body size check and security headers
+// =====================================================================
+bool checkBodySize(int maxBytes = 2048) {
+  if (server.hasArg("plain") && (int)server.arg("plain").length() > maxBytes) {
+    server.send(413, "application/json", "{\"error\":\"request body too large\"}");
+    return false;
+  }
+  return true;
+}
+
+void addSecHeaders() {
+  server.sendHeader("X-Content-Type-Options", "nosniff");
+  server.sendHeader("X-Frame-Options", "DENY");
+}
+
+// =====================================================================
 //  HTTP: POST /api/devices — control a device by equipment ID
 // =====================================================================
 void handleSetDevice() {
@@ -659,6 +676,7 @@ void handleSetDevice() {
 // =====================================================================
 void handleGetConfig() {
   if (!auth.check(server, ROLE_USER)) return;
+  addSecHeaders();
   JsonDocument doc;
   JsonObject env = doc["environment"].to<JsonObject>();
   env["name"] = config.env.name;
@@ -760,6 +778,7 @@ void handleGetConfig() {
 
 void handleSetEnvironment() {
   if (!auth.check(server, ROLE_TECHNICIAN)) return;
+  if (!checkBodySize()) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -780,6 +799,7 @@ void handleSetEnvironment() {
 
 void handleAddZone() {
   if (!auth.check(server, ROLE_TECHNICIAN)) return;
+  if (!checkBodySize()) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -840,6 +860,7 @@ void syncSensorPins() {
 
 void handleAddEquipment() {
   if (!auth.check(server, ROLE_TECHNICIAN)) return;
+  if (!checkBodySize()) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -886,6 +907,7 @@ void handleAddEquipment() {
 
 void handleUpdateEquipment() {
   if (!auth.check(server, ROLE_TECHNICIAN)) return;
+  if (!checkBodySize()) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -946,6 +968,7 @@ void handleDeleteEquipment() {
 // =====================================================================
 void handleOnboarding() {
   if (!auth.check(server, ROLE_TECHNICIAN)) return;
+  if (!checkBodySize(4096)) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -1020,6 +1043,7 @@ const char *commissionName(CommissionStatus s) {
 
 void handleCommission() {
   if (!auth.check(server, ROLE_TECHNICIAN)) return;
+  if (!checkBodySize()) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -1080,6 +1104,7 @@ void handleGetClock() {
 
 void handleSetClock() {
   if (!auth.check(server, ROLE_TECHNICIAN)) return;
+  if (!checkBodySize()) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -1138,6 +1163,7 @@ void handleGetRules() {
 
 void handleAddRule() {
   if (!auth.check(server, ROLE_TECHNICIAN)) return;
+  if (!checkBodySize()) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -1179,6 +1205,7 @@ void handleAddRule() {
 
 void handleUpdateRule() {
   if (!auth.check(server, ROLE_TECHNICIAN)) return;
+  if (!checkBodySize()) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -1259,6 +1286,7 @@ void handleActionLog() {
 // =====================================================================
 void handleOverride() {
   if (!auth.check(server, ROLE_USER)) return;
+  if (!checkBodySize()) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -1404,6 +1432,7 @@ void handleGetSensors() {
 
 void handleAddSensor() {
   if (!auth.check(server, ROLE_TECHNICIAN)) return;
+  if (!checkBodySize()) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -1654,6 +1683,7 @@ void handleGetDrivers() {
 
 void handleAddNode() {
   if (!auth.check(server, ROLE_TECHNICIAN)) return;
+  if (!checkBodySize()) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -1932,6 +1962,7 @@ void handleConfigBackup() {
 
 void handleConfigRestore() {
   if (!auth.check(server, ROLE_TECHNICIAN)) return;
+  if (!checkBodySize(8192)) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -2005,6 +2036,7 @@ void handleGetAuth() {
 
 void handleSetAuth() {
   if (!auth.check(server, ROLE_TECHNICIAN)) return;
+  if (!checkBodySize()) return;
   if (!server.hasArg("plain")) {
     server.send(400, "application/json", "{\"error\":\"need JSON body\"}");
     return;
@@ -2062,6 +2094,29 @@ void handleSystemInfo() {
   String json;
   serializeJson(doc, json);
   server.send(200, "application/json", json);
+}
+
+// =====================================================================
+//  HTTP: POST /api/factory-reset — erase all config and reboot
+// =====================================================================
+void handleFactoryReset() {
+  if (!auth.check(server, ROLE_TECHNICIAN)) return;
+  addSecHeaders();
+
+  const char *files[] = {
+    "/config/env.json", "/config/zones.json", "/config/equipment.json",
+    "/config/sensors.json", "/config/rules.json", "/config/nodes.json",
+    "/config/auth.json", "/log/events.json"
+  };
+  for (int i = 0; i < 8; i++) {
+    if (LittleFS.exists(files[i])) LittleFS.remove(files[i]);
+  }
+
+  eventLog.add("system", "Factory reset performed");
+  Serial.println("[System] Factory reset — all config erased");
+  server.send(200, "application/json", "{\"ok\":true,\"reboot\":true}");
+  delay(500);
+  ESP.restart();
 }
 
 // =====================================================================
@@ -2223,6 +2278,7 @@ void setup() {
   server.on("/api/auth",               HTTP_GET,    handleGetAuth);
   server.on("/api/auth",               HTTP_POST,   handleSetAuth);
   server.on("/api/system",             HTTP_GET,    handleSystemInfo);
+  server.on("/api/factory-reset",      HTTP_POST,   handleFactoryReset);
 
   server.onNotFound(handleNotFound);
   server.begin();
