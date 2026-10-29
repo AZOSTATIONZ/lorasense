@@ -299,7 +299,7 @@ void handleIncoming(const uint8_t *buf, uint8_t len) {
 void setup() {
   Serial.begin(115200);
   Serial.println();
-  Serial.println("=== LoRa node: relay controller (Mega) ===");
+  Serial.println("=== LoRaSense Node v3.0.0 (Mega) ===");
 
   // Relays: safe state first
   for (uint8_t i = 0; i < RELAY_COUNT; i++) {

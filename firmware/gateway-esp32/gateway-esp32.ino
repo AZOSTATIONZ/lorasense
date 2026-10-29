@@ -2018,7 +2018,8 @@ void setup() {
   Serial.begin(115200);
   delay(500);
   Serial.println();
-  Serial.println("=== LoRaSense gateway ===");
+  Serial.println("=== LoRaSense Gateway v3.0.0 ===");
+  Serial.print("Free heap: "); Serial.print(ESP.getFreeHeap()); Serial.println(" bytes");
 
   // Init output states
   for (int i = 0; i < MAX_OUTPUTS; i++) {
