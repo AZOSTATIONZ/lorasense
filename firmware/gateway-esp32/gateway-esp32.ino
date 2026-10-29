@@ -61,6 +61,7 @@ uint32_t lastKeepalive = 0;
 
 // --- Sensor history sampling ---
 const uint32_t HISTORY_INTERVAL_MS = 300000;  // 5 minutes
+const uint32_t HISTORY_FLUSH_MS   = 1800000;  // 30 minutes
 uint32_t lastHistorySample = 0;
 bool firstSampleTaken = false;
 
@@ -1330,6 +1331,10 @@ void handleHistory() {
     json += String(r.tempX10 / 10.0, 1);
     json += ",\"h\":";
     json += String(r.humX10 / 10.0, 1);
+    if (r.analogX10 >= 0) {
+      json += ",\"analog\":";
+      json += String(r.analogX10 / 10.0, 1);
+    }
     json += '}';
   }
   json += ']';
@@ -2106,9 +2111,9 @@ void handleFactoryReset() {
   const char *files[] = {
     "/config/env.json", "/config/zones.json", "/config/equipment.json",
     "/config/sensors.json", "/config/rules.json", "/config/nodes.json",
-    "/config/auth.json", "/log/events.json"
+    "/config/auth.json", "/log/events.json", "/data/history.bin"
   };
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < 9; i++) {
     if (LittleFS.exists(files[i])) LittleFS.remove(files[i]);
   }
 
@@ -2202,6 +2207,9 @@ void setup() {
   // Auth and event log
   auth.begin();
   eventLog.begin();
+  if (history.loadFromFile()) {
+    Serial.print("[History] Restored "); Serial.print(history.count); Serial.println(" readings from flash");
+  }
   Serial.print("Auth: "); Serial.println(auth.enabled ? "enabled" : "disabled");
   eventLog.add("system", "Gateway booted");
 
@@ -2324,12 +2332,17 @@ void loop() {
   NodeState *pn = primaryNode();
   if (pn && pn->online) {
     if (!firstSampleTaken) {
-      history.push(millis() / 1000, pn->temperature, pn->humidity);
+      history.push(millis() / 1000, pn->temperature, pn->humidity, pn->analogValue);
       lastHistorySample = millis();
       firstSampleTaken = true;
     } else if (millis() - lastHistorySample >= HISTORY_INTERVAL_MS) {
-      history.push(millis() / 1000, pn->temperature, pn->humidity);
+      history.push(millis() / 1000, pn->temperature, pn->humidity, pn->analogValue);
       lastHistorySample = millis();
     }
+  }
+
+  // Flush history to flash every 30 minutes
+  if (history.count > 0 && millis() - history.lastFlush >= HISTORY_FLUSH_MS) {
+    history.saveToFile();
   }
 }

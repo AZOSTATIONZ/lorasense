@@ -962,6 +962,35 @@ function drawChart() {
     if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   }
   ctx.stroke();
+
+  // Draw analog line (if data present) — uses humidity y-axis scale
+  var hasAnalog = false;
+  for (var i = 0; i < pts.length; i++) {
+    if (pts[i].analog !== undefined) { hasAnalog = true; break; }
+  }
+  if (hasAnalog) {
+    var aMin = Infinity, aMax = -Infinity;
+    for (var i = 0; i < pts.length; i++) {
+      if (pts[i].analog !== undefined) {
+        if (pts[i].analog < aMin) aMin = pts[i].analog;
+        if (pts[i].analog > aMax) aMax = pts[i].analog;
+      }
+    }
+    var aPad = Math.max((aMax - aMin) * 0.1, 1);
+    aMin -= aPad; aMax += aPad;
+    ctx.strokeStyle = '#22c55e';
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    var started = false;
+    for (var i = 0; i < pts.length; i++) {
+      if (pts[i].analog === undefined) { started = false; continue; }
+      var x = xPos(pts[i].t);
+      var y = pad.t + ch * (1 - (pts[i].analog - aMin) / (aMax - aMin));
+      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
 }
 
 // Range button handlers
