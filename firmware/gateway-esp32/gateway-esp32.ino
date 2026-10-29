@@ -266,9 +266,23 @@ void checkIncoming() {
       Serial.print(" on="); Serial.println(ack->actualOn);
     }
   }
-  else if (hdr->type == MSG_TELEMETRY) handleTelemetry(buf, n, hdr->src);
+  else if (hdr->type == MSG_TELEMETRY) {
+    if (srcNode && hdr->seq == srcNode->lastTelemetrySeq) {
+      Serial.print("[LoRa] duplicate telemetry seq="); Serial.print(hdr->seq);
+      Serial.print(" from 0x"); Serial.println(hdr->src, HEX);
+    } else {
+      if (srcNode) srcNode->lastTelemetrySeq = hdr->seq;
+      handleTelemetry(buf, n, hdr->src);
+    }
+  }
   else if (hdr->type == MSG_HEARTBEAT) {
-    Serial.print("[LoRa] Heartbeat from 0x"); Serial.println(hdr->src, HEX);
+    if (srcNode && hdr->seq == srcNode->lastHeartbeatSeq) {
+      Serial.print("[LoRa] duplicate heartbeat seq="); Serial.print(hdr->seq);
+      Serial.print(" from 0x"); Serial.println(hdr->src, HEX);
+    } else {
+      if (srcNode) srcNode->lastHeartbeatSeq = hdr->seq;
+      Serial.print("[LoRa] Heartbeat from 0x"); Serial.println(hdr->src, HEX);
+    }
   }
   else if (hdr->type == MSG_CONFIG_ACK) {
     if (n >= (int)(HEADER_SIZE + sizeof(ConfigAckPayload) + CRC_SIZE)) {
@@ -2086,6 +2100,10 @@ void setup() {
 
   // Load config from flash
   config.begin();
+  if (!config.validateConfig()) {
+    Serial.println("[Config] Corrected out-of-range values");
+    eventLog.add("config", "Config validated: out-of-range values corrected");
+  }
   if (!config.env.configured) {
     Serial.println("First boot: waiting for onboarding wizard...");
     LittleFS.mkdir("/config");

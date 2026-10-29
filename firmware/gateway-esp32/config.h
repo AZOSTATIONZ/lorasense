@@ -131,6 +131,68 @@ public:
     return true;
   }
 
+  // Validate loaded config — clamp out-of-range values and auto-save corrections
+  bool validateConfig() {
+    bool corrected = false;
+
+    // Environment
+    if (env.relayCount < 1 || env.relayCount > MAX_OUTPUTS) {
+      env.relayCount = constrain(env.relayCount, 1, MAX_OUTPUTS);
+      corrected = true;
+    }
+
+    // Equipment
+    for (int i = 0; i < equipmentCount; i++) {
+      Equipment &eq = equipment[i];
+      if (!eq.active) continue;
+      if (eq.outputIndex != 0xFF && eq.outputIndex >= env.relayCount) {
+        eq.outputIndex = 0xFF;
+        corrected = true;
+      }
+      if (eq.interlockGroup > 8) {
+        eq.interlockGroup = 0;
+        corrected = true;
+      }
+    }
+
+    // Sensors
+    for (int i = 0; i < sensorCount; i++) {
+      SensorInstance &s = sensors[i];
+      if (!s.active) continue;
+      if (s.scaleX100 < 10 || s.scaleX100 > 1000) {
+        s.scaleX100 = 100;
+        corrected = true;
+      }
+      if (s.pin != 0xFF && s.pin > 69) {
+        s.enabled = false;
+        corrected = true;
+      }
+    }
+
+    // Rules
+    for (int i = 0; i < ruleCount; i++) {
+      AutomationRule &r = rules[i];
+      if (r.thresholdX10 < -500 || r.thresholdX10 > 1500) {
+        r.thresholdX10 = constrain(r.thresholdX10, (int16_t)-500, (int16_t)1500);
+        corrected = true;
+      }
+      if (r.hysteresisX10 < 0 || r.hysteresisX10 > 200) {
+        r.hysteresisX10 = constrain(r.hysteresisX10, (int16_t)0, (int16_t)200);
+        corrected = true;
+      }
+      if (r.cooldownS > 86400) { r.cooldownS = 86400; corrected = true; }
+      if (r.durationS > 86400) { r.durationS = 86400; corrected = true; }
+    }
+
+    if (corrected) {
+      saveEnvironment();
+      saveEquipment();
+      saveSensors();
+      saveRules();
+    }
+    return !corrected;
+  }
+
   // --- Environment ---
   void loadEnvironment() {
     File f = LittleFS.open("/config/env.json", "r");

@@ -24,6 +24,8 @@ struct NodeState {
   bool     configSynced;
   uint32_t lastConfigPush;
   int8_t   rssi;             // last received RSSI
+  uint8_t  lastTelemetrySeq; // for duplicate detection
+  uint8_t  lastHeartbeatSeq; // for duplicate detection
 
   void reset() {
     online = false;
@@ -38,6 +40,8 @@ struct NodeState {
     configSynced = false;
     lastConfigPush = 0;
     rssi = 0;
+    lastTelemetrySeq = 0xFF;
+    lastHeartbeatSeq = 0xFF;
   }
 };
 
